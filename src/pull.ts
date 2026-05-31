@@ -712,14 +712,19 @@ export function pipeToSync(
 
   try {
     for (const batch of pipeline) {
-      for (const chunk of batch) {
-        totalBytes += chunk.byteLength;
-      }
       if ('writev' in writer && typeof writer.writev === 'function') {
-        writer.writev(batch);
+        if (!writer.writev(batch)) {
+          throw new Error('Sync writev failed');
+        }
+        for (const chunk of batch) {
+          totalBytes += chunk.byteLength;
+        }
       } else {
         for (const chunk of batch) {
-          writer.write(chunk);
+          if (!writer.write(chunk)) {
+            throw new Error('Sync write failed');
+          }
+          totalBytes += chunk.byteLength;
         }
       }
     }

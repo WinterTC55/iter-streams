@@ -203,10 +203,8 @@ export interface Writer {
 /**
  * Sync writer interface for producing data.
  * 
- * Follows the same backpressure policies as Writer:
- * - "block": write/writev enqueue and return true (space) or false (backpressure signal; data IS accepted)
- * - "strict": writes exceeding buffer capacity throw RangeError
- * - "drop-oldest"/"drop-newest": writes never fail
+ * A false return from write/writev means the writer could not perform the
+ * operation synchronously. Sync pipelines must treat that as a failed write.
  * - end() throws TypeError if already closed or errored
  * - fail() is a no-op if already closed or errored
  */
@@ -219,7 +217,7 @@ export interface SyncWriter {
    */
   readonly desiredSize: number | null;
 
-  /** Write single chunk. Returns true if buffer has space, false as backpressure signal under "block". */
+  /** Write single chunk. Returns true if accepted, false if not completed synchronously. */
   write(chunk: Uint8Array | string): boolean;
 
   /** Write multiple chunks atomically. All-or-nothing. Returns true/false like write(). */

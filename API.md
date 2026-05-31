@@ -286,12 +286,10 @@ interface SyncWriter {
 }
 ```
 
-`SyncWriter` follows the same backpressure policies as `Writer`:
-- `"block"`: `write()`/`writev()` enqueue and return `true` when buffer has
-  space, or enqueue and return `false` when full (backpressure signal; data IS
-  accepted).
-- `"strict"`: Writes exceeding buffer capacity throw a `RangeError`.
-- `"drop-oldest"`/`"drop-newest"`: Behave as with `Writer`. Writes never fail.
+For `SyncWriter`, `write()` and `writev()` return `true` only when the data was
+accepted synchronously. A `false` return means the operation could not be
+performed synchronously, so sync callers such as `Stream.pipeToSync()` must
+treat it as a failed write. Failed writes are not counted as written bytes.
 - `end()` throws `TypeError` if already closed or errored (no -1 fallback;
   there is no async counterpart to fall back to).
 - `fail()` transitions to error state; no-op if already closed or errored.
@@ -734,6 +732,11 @@ function pipeToSync(
   ...args: [...SyncTransform[], SyncWriter, PipeToSyncOptions?]
 ): number
 ```
+
+`pipeToSync()` counts bytes only after a successful synchronous write. If
+`writer.write()` or `writer.writev()` returns `false`, `pipeToSync()` throws,
+calls `writer.fail()` unless `preventFail` is set, and does not count that
+failed write.
 
 ---
 

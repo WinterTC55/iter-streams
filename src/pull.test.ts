@@ -47,11 +47,13 @@ function createMockSyncWriter(): SyncWriter & { chunks: Uint8Array[]; closed: bo
       if (this.closed) throw new Error('Writer is closed');
       const data = typeof chunk === 'string' ? new TextEncoder().encode(chunk) : chunk;
       this.chunks.push(data);
+      return true;
     },
     writev(chunks: (Uint8Array | string)[]) {
       for (const chunk of chunks) {
         this.write(chunk);
       }
+      return true;
     },
     end() {
       this.closed = true;
@@ -762,6 +764,45 @@ describe('pipeToSync()', () => {
   });
 
   describe('error handling', () => {
+    it('should throw and fail writer when writev returns false [WRITE-022]', () => {
+      const source = fromSync('ab');
+      const writer = {
+        ...createMockSyncWriter(),
+        writev() {
+          return false;
+        },
+      };
+
+      assert.throws(() => {
+        pipeToSync(source, writer);
+      }, /Sync writev failed/);
+
+      assert.ok(writer.failed);
+      assert.deepStrictEqual(writer.chunks, []);
+    });
+
+    it('should throw and fail writer when write returns false [WRITE-023]', () => {
+      const source = fromSync(['a', 'b']);
+      const writer = createMockSyncWriter();
+      delete (writer as Partial<SyncWriter>).writev;
+      writer.write = function write(chunk: Uint8Array | string) {
+        if (this.chunks.length >= 1) {
+          return false;
+        }
+        const data = typeof chunk === 'string' ? new TextEncoder().encode(chunk) : chunk;
+        this.chunks.push(data);
+        return true;
+      };
+
+      assert.throws(() => {
+        pipeToSync(source, writer);
+      }, /Sync write failed/);
+
+      assert.ok(writer.failed);
+      assert.strictEqual(writer.chunks.length, 1);
+      assert.strictEqual(decode(concatBytes(writer.chunks)), 'a');
+    });
+
     it('should fail writer on source error [WRITE-020]', () => {
       const source = {
         *[Symbol.iterator]() {

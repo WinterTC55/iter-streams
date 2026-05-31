@@ -263,6 +263,8 @@ Consumes source and writes to a writer with optional transforms.
 |----|-------------|--------|
 | WRITE-020 | Fails writer on source error | ✅ |
 | WRITE-021 | Throws if no writer provided | ✅ |
+| WRITE-022 | pipeToSync() throws and fails writer when writev returns false | ✅ |
+| WRITE-023 | pipeToSync() throws and fails writer when write returns false | ✅ |
 | WRITE-025 | pipeTo passes signal to writer.write() | ✅ |
 | WRITE-026 | pipeTo passes signal to writer.end() | ✅ |
 
