@@ -36,7 +36,7 @@ This document proposes the <dfn>Iterable Streams API</dfn>, a streaming interfac
 
 4.  **Pull-through transforms**: Transform pipelines are lazy. No data flows until the consumer pulls.
 
-5.  **Explicit backpressure**: Backpressure is controlled by a configurable [=backpressure policy=] (`"strict"`, `"block"`, `"drop-oldest"`, `"drop-newest"`).
+5.  **Explicit backpressure**: Backpressure is controlled by a configurable [=backpressure policy=] (`"strict"`, `"unbounded"`, `"drop-oldest"`, `"drop-newest"`).
 
 6.  **Clean sync/async separation**: Synchronous and asynchronous APIs are fully separated.
 
@@ -95,7 +95,7 @@ an array of {{Uint8Array}} objects (`Uint8Array[]`) representing a group of byte
 
 <h3 class="no-toc" id="term-backpressure-policy"><dfn>backpressure policy</dfn></h3>
 
-a {{BackpressurePolicy}} value controlling the behavior when an internal buffer is full
+a {{BackpressurePolicy}} value controlling the behavior when an internal buffer's byte budget is exhausted
 
 <h3 class="no-toc" id="term-push-stream"><dfn>push stream</dfn></h3>
 
@@ -140,17 +140,23 @@ for await (const chunks of readable) {
 Backpressure {#concept-backpressure}
 ------------------------------------
 
-Backpressure is the mechanism by which a consumer signals to a producer that it should slow down. In this API, backpressure is managed through [=backpressure policies=]:
+Backpressure is the mechanism by which a consumer signals to a producer that it should slow down. In this API, backpressure is managed through a <dfn>byte budget</dfn> and [=backpressure policies=].
 
-*   **`"strict"`** (default): Catches producers that ignore backpressure. Properly awaited writes wait for buffer space; un-awaited writes exceeding the buffer limit cause a rejection. Both the slots buffer and pending writes queue are limited by `highWaterMark`.
+The internal slots buffer has a byte budget controlling how much data may accumulate. Each write operation occupies one slot. The slot count is elastic: small writes consume little budget so many slots fit; large writes consume more budget so fewer slots fit. A write is accepted when the buffered bytes are below the budget, regardless of the write's own size. Once accepted, the write consumes budget equal to its byte size, even if this overshoots the remaining budget. The next write then sees the budget exhausted and the [=backpressure policy=] determines what happens.
 
-*   **`"block"`**: Async writes wait for buffer space. Sync writes return `false` when the buffer is full. The pending writes queue is unbounded.
+The `budget` option specifies the initial byte budget for writers created by {{Stream/push()}}, {{Stream/broadcast()}}, {{Stream/share()}}, and {{Stream/duplex()}}. If not provided, the implementation selects a default that must be at least 16384 bytes (16 KB). Implementations may apply a reasonable upper limit.
 
-*   **`"drop-oldest"`**: Oldest buffered data is discarded to make room for new data. Writes never block.
+The [=byte budget=] is not required to remain fixed for the lifetime of a writer. Implementations may adjust the budget dynamically in response to external factors such as flow control signals, memory pressure, or network conditions. For example, a {{Writer}} backed by a QUIC stream may have a budget governed by the stream's flow control window, which can expand or contract independently of write operations. All backpressure checks evaluate the budget at call time; a budget that increases between writes may cause {{Writer/canWrite}} to transition from `false` to `true` and may resolve pending {{Stream/ondrain()}} promises without any data being consumed.
 
-*   **`"drop-newest"`**: Incoming data is silently discarded when buffer is full. Writes never block.
+The [=backpressure policies=] are:
 
-The `highWaterMark` option controls the buffer size in slots (chunk batches), not bytes. It is clamped to a minimum of 1. Implementations may also apply a reasonable upper limit; the specific maximum is implementation-defined, but must be at least 1024.
+*   **`"strict"`** (default): Catches producers that ignore backpressure. Properly awaited writes wait for buffer space; a single un-awaited write is tolerated (the one currently in flight), but a second un-awaited write when the budget is exhausted causes a rejection. The pending writes queue is limited to 1 operation.
+
+*   **`"unbounded"`**: Async writes always enqueue, waiting for buffer space to become available. Sync writes return `false` when the budget is exhausted and the data is not accepted. The pending writes queue is unbounded.
+
+*   **`"drop-oldest"`**: Oldest buffered data is discarded until the budget has capacity, then the new data is accepted. Writes never block. The pending writes queue is not used.
+
+*   **`"drop-newest"`**: Incoming data is silently discarded when the budget is exhausted. Writes never block. The pending writes queue is not used.
 
 Pull and push models {#concept-push-pull}
 -----------------------------------------
@@ -168,7 +174,7 @@ Try-fallback pattern {#concept-try-fallback}
 
 The {{Writer}} interface provides synchronous variants of its write and end methods ({{Writer/writeSync()}}, {{Writer/writevSync()}}, {{Writer/endSync()}}) alongside the async versions. The intended usage is a <dfn>try-fallback pattern</dfn>: attempt the synchronous method first, and if it indicates failure, fall back to the async version. ({{Writer/fail()}} is unconditionally synchronous and does not participate in this pattern.)
 
-For {{Writer/writeSync()}} and {{Writer/writevSync()}}, a return value of `false` indicates the synchronous attempt was not accepted. For {{Writer/endSync()}}, a return value of −1 indicates the same. In either case, the caller should fall back to the async method and `await` it:
+For {{Writer/writeSync()}} and {{Writer/writevSync()}}, a return value of `false` indicates the data was not accepted into the slots buffer. For {{Writer/endSync()}}, a return value of −1 indicates the same. In either case, the caller should fall back to the async method and `await` it:
 
 ```js
 // Try sync, fall back to async
@@ -183,7 +189,7 @@ if (n < 0) {
 }
 ```
 
-This pattern enables high-performance paths where synchronous writes succeed (e.g., buffer has space), while still handling backpressure correctly when they do not. The {{Writer}} synchronous methods never throw on backpressure; they return a failure indicator, leaving the caller to decide whether to await, retry, or drop. ({{SyncWriter}} has different semantics; see [[#idl-syncwriter]].)
+This pattern enables high-performance paths where synchronous writes succeed (e.g., [=byte budget=] has capacity), while still handling backpressure correctly when they do not. The {{Writer}} synchronous methods never throw on backpressure; they return a failure indicator, leaving the caller to decide whether to await, retry, or drop.
 
 
 Web IDL definitions {#idl}
@@ -195,7 +201,7 @@ BackpressurePolicy {#idl-backpressure}
 <pre class="idl">
 enum BackpressurePolicy {
   "strict",
-  "block",
+  "unbounded",
   "drop-oldest",
   "drop-newest"
 };
@@ -226,7 +232,7 @@ dictionary WriteOptions {
 };
 
 dictionary PushStreamOptions {
-  unsigned long highWaterMark = 4;
+  unsigned long long budget;
   BackpressurePolicy backpressure = "strict";
   AbortSignal signal;
 };
@@ -273,33 +279,33 @@ dictionary MergeOptions {
 };
 
 dictionary BroadcastOptions {
-  unsigned long highWaterMark = 16;
+  unsigned long long budget;
   BackpressurePolicy backpressure = "strict";
   AbortSignal signal;
 };
 
 dictionary ShareOptions {
-  unsigned long highWaterMark = 16;
+  unsigned long long budget;
   BackpressurePolicy backpressure = "strict";
   AbortSignal signal;
 };
 
 dictionary ShareSyncOptions {
-  unsigned long highWaterMark = 16;
+  unsigned long long budget;
   BackpressurePolicy backpressure = "strict";
 };
 </pre>
 
-Note: The default `highWaterMark` for {{BroadcastOptions}}, {{ShareOptions}}, and {{ShareSyncOptions}} is 16, compared to 4 for {{PushStreamOptions}} and {{DuplexOptions}}. Multi-consumer patterns benefit from a larger buffer because the slowest consumer governs backpressure, so a larger buffer provides more headroom before fast consumers are stalled by a slow one.
+Note: The `budget` must be at least 16384 bytes (16 KB); implementations may choose a higher default. Implementations may also choose a larger default for multi-consumer patterns ({{BroadcastOptions}}, {{ShareOptions}}, {{ShareSyncOptions}}) than for single-consumer patterns ({{PushStreamOptions}}, {{DuplexOptions}}), because the slowest consumer governs backpressure and a larger budget provides more headroom before fast consumers are stalled by a slow one.
 
 <pre class="idl">
 dictionary DuplexDirectionOptions {
-  unsigned long highWaterMark;
+  unsigned long long budget;
   BackpressurePolicy backpressure;
 };
 
 dictionary DuplexOptions {
-  unsigned long highWaterMark = 4;
+  unsigned long long budget;
   BackpressurePolicy backpressure = "strict";
   DuplexDirectionOptions a;
   DuplexDirectionOptions b;
@@ -329,7 +335,7 @@ The Writer interface {#idl-writer}
 
 <pre class="idl">
 interface Writer {
-  readonly attribute long? desiredSize;
+  readonly attribute boolean? canWrite;
 
   Promise&lt;undefined> write((Uint8Array or USVString) chunk, optional WriteOptions options = {});
   Promise&lt;undefined> writev(sequence&lt;(Uint8Array or USVString)> chunks, optional WriteOptions options = {});
@@ -352,7 +358,7 @@ The SyncWriter interface {#idl-syncwriter}
 
 <pre class="idl">
 interface SyncWriter {
-  readonly attribute long? desiredSize;
+  readonly attribute boolean? canWrite;
 
   boolean writeSync((Uint8Array or USVString) chunk);
   boolean writevSync(sequence&lt;(Uint8Array or USVString)> chunks);
@@ -365,10 +371,9 @@ The {{SyncWriter}} interface is a synchronous interface for producing data. {{Wr
 
 Like {{Writer}}, {{SyncWriter}} is an interface, not a concrete class. Implementations should support `Symbol.dispose` (calling {{SyncWriter/fail()}} with no argument), enabling `using` syntax.
 
-{{SyncWriter}} follows the same [=backpressure policies=] as {{Writer}} with adaptations for synchronous operation:
+{{SyncWriter}} follows the same [=backpressure policies=] as {{Writer}} with adaptations for synchronous operation. {{SyncWriter}} never uses the pending writes queue; only the slots buffer and its [=byte budget=] are relevant.
 
-*   With `"block"`, {{SyncWriter/writeSync()}} and {{SyncWriter/writevSync()}} always enqueue the chunk(s) and return `true` when the buffer has space, or enqueue and return `false` when the buffer is full. The `false` return is a backpressure signal; the data is still accepted, but the caller should slow down.
-*   With `"strict"`, writes that exceed the buffer capacity throw a {{RangeError}}.
+*   With `"strict"` and `"unbounded"`, {{SyncWriter/writeSync()}} and {{SyncWriter/writevSync()}} enqueue the chunk(s) and return `true` when the [=byte budget=] has capacity, or return `false` when the budget is exhausted. The data is not accepted; no async fallback is available.
 *   With `"drop-oldest"` and `"drop-newest"`, writes behave as described in [[#concept-backpressure]]: the oldest or newest data is discarded respectively. Writes never fail.
 *   {{SyncWriter/endSync()}} throws a {{TypeError}} if the writer is already closed or errored.
 *   {{SyncWriter/fail()}} transitions the writer to the errored state. If the writer is already closed or errored, it is a no-op.
@@ -379,7 +384,6 @@ The Broadcast interface {#idl-broadcast}
 <pre class="idl">
 interface Broadcast {
   readonly attribute unsigned long consumerCount;
-  readonly attribute unsigned long bufferSize;
 
   ByteReadableStream push(any... args);
 
@@ -397,7 +401,6 @@ The Share interface {#idl-share}
 <pre class="idl">
 interface Share {
   readonly attribute unsigned long consumerCount;
-  readonly attribute unsigned long bufferSize;
 
   ByteReadableStream pull(any... args);
 
@@ -415,7 +418,6 @@ The SyncShare interface {#idl-syncshare}
 <pre class="idl">
 interface SyncShare {
   readonly attribute unsigned long consumerCount;
-  readonly attribute unsigned long bufferSize;
 
   SyncByteReadableStream pull(any... args);
 
@@ -515,12 +517,12 @@ When called, it performs the following steps:
 <ol>
 <li>Let |transforms| be an empty list and |options| be an empty {{PushStreamOptions}}.
 <li>[=Parse variadic transform arguments=] from |args| into |transforms| and |options|.
-<li>Let |highWaterMark| be the result of clamping |options|["{{PushStreamOptions/highWaterMark}}"] to the range [1, implementation-defined maximum].
+<li>Let |budget| be |options|["{{PushStreamOptions/budget}}"] if present; otherwise an implementation-defined default that must be at least 16384 bytes.
 <li>Let |backpressure| be |options|["{{PushStreamOptions/backpressure}}"].
 <li>Let |signal| be |options|["{{PushStreamOptions/signal}}"] if present; otherwise `undefined`.
-<li>Create an internal slots buffer with capacity |highWaterMark|.
-<li>Create a pending writes queue. If |backpressure| is `"strict"`, limit its capacity to |highWaterMark|.
-<li>Let |writer| be a new {{Writer}} backed by the internal buffer, the pending writes queue, the [=backpressure policy=] |backpressure|, and |signal| if present.
+<li>Create an internal slots buffer with [=byte budget=] |budget|.
+<li>If |backpressure| is `"strict"`, create a pending writes queue with capacity 1. If |backpressure| is `"unbounded"`, create a pending writes queue with no capacity limit. Otherwise (for `"drop-oldest"` and `"drop-newest"`), no pending writes queue is created.
+<li>Let |writer| be a new {{Writer}} backed by the internal buffer, the pending writes queue (if any), the [=backpressure policy=] |backpressure|, and |signal| if present.
 <li>Let |pipelineController| be a new {{AbortController}}. If |signal| is not `undefined`, set |pipelineController|'s signal to follow |signal|.
 <li>Let |bufferIterable| be an async iterable that dequeues the next batch from the slots buffer on each step (waiting if empty).
 <li>Let |readable| be the result of [=compose transform pipeline=] with |bufferIterable|, |transforms|, and a {{TransformCallbackOptions}} with signal set to |pipelineController|'s signal. On return or throw (consumer stops iterating), abort |pipelineController| and signal cancellation to |writer|.
@@ -538,15 +540,15 @@ The Writer interface {#writer-section}
 
 A {{Writer}} provides the interface for producing data. Implementations of {{Writer}} are returned by {{Stream/push()}}, {{Stream/broadcast()}}, and {{Stream/duplex()}}, but any object conforming to this interface can serve as a writer.
 
-### `Writer.desiredSize` ### {#writer-desiredsize}
+### `Writer.canWrite` ### {#writer-canwrite}
 
 <div algorithm>
-The <dfn attribute for="Writer">desiredSize</dfn> attribute, on getting, returns `null` if the writer is closed or errored. Otherwise it returns the number of available slots in the internal buffer (i.e., `highWaterMark` minus the number of occupied slots), which is always ≥ 0.
+The <dfn attribute for="Writer">canWrite</dfn> attribute, on getting, returns `null` if the writer is closed or errored. Otherwise it returns `true` if the buffered bytes are below the [=byte budget=] (indicating the next write is likely to be accepted), or `false` if the budget is exhausted (indicating the next write is likely to be refused or will block).
 </div>
 
-{{Writer/desiredSize}} reflects capacity in the slots buffer only; it does not account for writes waiting in the pending writes queue. When the [=backpressure policy=] is `"block"`, a {{Writer/desiredSize}} of 0 means the slots buffer is full, regardless of how many additional writes are queued in the pending writes queue behind it. It is not a measurement of total queued items.
+{{Writer/canWrite}} reflects capacity in the slots buffer only; it does not account for writes waiting in the pending writes queue. The result is a hint, not a guarantee: the state can change between the check and the write due to the natural TOCTOU window. The only way to know for certain whether a write will be accepted is to attempt it.
 
-Note: Unlike the WHATWG Streams API, {{Writer/desiredSize}} is never negative. A value of 0 is the signal that the buffer is full; producers should await their writes or use {{Stream/ondrain()}} before writing more.
+Note: Producers should use {{Stream/ondrain()}} to wait for the budget to clear rather than polling {{Writer/canWrite}}.
 
 ### `Writer.write()` ### {#writer-write}
 
@@ -559,13 +561,14 @@ The <dfn method for="Writer">write(chunk, options)</dfn> method writes a single 
 <li>If the writer is errored, return [=a promise rejected with=] the stored error.
 <li>If |options|["{{WriteOptions/signal}}"] is present and [=AbortSignal/aborted=], return [=a promise rejected with=] its abort reason.
 <li>Let |batch| be « |chunk| ».
-<li>If the slots buffer has space, enqueue |batch|, [=notify drain waiters=], and return [=a promise resolved with=] `undefined`.
-<li>The slots buffer is full. Proceed based on the [=backpressure policy=]:
+<li>Let |byteSize| be the byte length of |chunk|.
+<li>If the buffered bytes are below the [=byte budget=], enqueue |batch|, add |byteSize| to the buffered byte count, [=notify drain waiters=], and return [=a promise resolved with=] `undefined`.
+<li>The [=byte budget=] is exhausted. Proceed based on the [=backpressure policy=]:
     <ol>
-    <li>If `"drop-oldest"`: dequeue the oldest batch, enqueue |batch|, and return [=a promise resolved with=] `undefined`.
+    <li>If `"drop-oldest"`: dequeue the oldest batch (subtracting its byte size from the buffered byte count) repeatedly until the buffered bytes are below the [=byte budget=], enqueue |batch|, add |byteSize| to the buffered byte count, and return [=a promise resolved with=] `undefined`.
     <li>If `"drop-newest"`: discard |batch| and return [=a promise resolved with=] `undefined`.
-    <li>If `"strict"`: if the pending writes queue is at capacity, return [=a promise rejected with=] a {{RangeError}}. Otherwise, add the write to the pending writes queue and return a promise that resolves when the batch is transferred to the slots buffer.
-    <li>If `"block"`: add the write to the pending writes queue and return a promise that resolves when the batch is transferred to the slots buffer.
+    <li>If `"strict"`: if the pending writes queue is occupied (already contains one write), return [=a promise rejected with=] a {{RangeError}}. Otherwise, add the write to the pending writes queue and return a promise that resolves when the batch is transferred to the slots buffer.
+    <li>If `"unbounded"`: add the write to the pending writes queue and return a promise that resolves when the batch is transferred to the slots buffer.
     </ol>
 <li>If the write was added to the pending writes queue and |options|["{{WriteOptions/signal}}"] is present, register an abort handler that removes this write from the pending queue and rejects its promise. The writer remains open; subsequent writes may still succeed.
 </ol>
@@ -574,7 +577,7 @@ The <dfn method for="Writer">write(chunk, options)</dfn> method writes a single 
 ### `Writer.writev()` ### {#writer-writev}
 
 <div algorithm>
-The <dfn method for="Writer">writev(chunks, options)</dfn> method writes multiple chunks as a single atomic batch. The operation is all-or-nothing: either all chunks are accepted or the entire write is rejected. It performs the same steps as {{Writer/write()}} except that |batch| is the result of converting each element of |chunks| to {{Uint8Array}} (encoding strings as UTF-8). The entire batch occupies a single slot for backpressure purposes.
+The <dfn method for="Writer">writev(chunks, options)</dfn> method writes multiple chunks as a single atomic batch. The operation is all-or-nothing: either all chunks are accepted or the entire write is rejected. It performs the same steps as {{Writer/write()}} except that |batch| is the result of converting each element of |chunks| to {{Uint8Array}} (encoding strings as UTF-8), and |byteSize| is the sum of all chunks' byte lengths. The entire batch occupies a single slot and its total byte size counts against the [=byte budget=].
 </div>
 
 ### `Writer.writeSync()` / `Writer.writevSync()` ### {#writer-writesync}
@@ -586,20 +589,20 @@ The <dfn method for="Writer">writeSync(chunk)</dfn> method attempts a synchronou
 <li>If |chunk| is a {{USVString}}, set |chunk| to the result of [=UTF-8 encode|UTF-8 encoding=] |chunk|.
 <li>If the writer is closed or errored, return `false`.
 <li>Let |batch| be « |chunk| ».
-<li>If the slots buffer has space, enqueue |batch|, [=notify drain waiters=], and return `true`.
-<li>The slots buffer is full. Proceed based on the [=backpressure policy=]:
+<li>Let |byteSize| be the byte length of |chunk|.
+<li>If the buffered bytes are below the [=byte budget=], enqueue |batch|, add |byteSize| to the buffered byte count, [=notify drain waiters=], and return `true`.
+<li>The [=byte budget=] is exhausted. Proceed based on the [=backpressure policy=]:
     <ol>
-    <li>If `"drop-oldest"`: dequeue the oldest batch, enqueue |batch|, and return `true`.
+    <li>If `"drop-oldest"`: dequeue the oldest batch (subtracting its byte size from the buffered byte count) repeatedly until the buffered bytes are below the [=byte budget=], enqueue |batch|, add |byteSize| to the buffered byte count, and return `true`.
     <li>If `"drop-newest"`: discard |batch| and return `true`.
-    <li>If `"strict"`: return `false`.
-    <li>If `"block"`: enqueue |batch| and return `false`. The data is accepted, but the `false` return signals backpressure.
+    <li>If `"strict"` or `"unbounded"`: return `false`.
     </ol>
 </ol>
 
-A return of `false` is the signal to use the [=try-fallback pattern=] and await {{Writer/write()}}.
+A return of `false` means the data was not accepted into the slots buffer. This is the signal to use the [=try-fallback pattern=] and fall back to {{Writer/write()}}.
 </div>
 
-The <dfn method for="Writer">writevSync(chunks)</dfn> method performs the same steps but enqueues the full batch as a single slot. Like {{Writer/writev()}}, the operation is all-or-nothing: it returns `true` only if all chunks are accepted, or `false` if none are. A return of `false` is the signal to use the [=try-fallback pattern=] and await {{Writer/writev()}}.
+The <dfn method for="Writer">writevSync(chunks)</dfn> method performs the same steps but enqueues the full batch as a single slot with |byteSize| equal to the sum of all chunks' byte lengths. Like {{Writer/writev()}}, the operation is all-or-nothing: it returns `true` only if all chunks are accepted, or `false` if none are. A return of `false` is the signal to use the [=try-fallback pattern=] and await {{Writer/writev()}}.
 
 ### `Writer.end()` / `Writer.endSync()` ### {#writer-end}
 
@@ -829,7 +832,7 @@ The <dfn method for="Stream">pipeToSync(source, ...args)</dfn> method is the syn
 <li>Let |preventClose| be |options|["{{PipeToSyncOptions/preventClose}}"] and |preventFail| be |options|["{{PipeToSyncOptions/preventFail}}"].
 <li>Let |pipeline| be the result of [=compose sync transform pipeline=] with |normalized| and the extracted |transforms|.
 <li>Let |totalBytes| be 0.
-<li>Synchronously iterate |pipeline|. For each |batch| yielded, for each |chunk| in |batch|, add |chunk|'s byte length to |totalBytes|. Then write the batch to |writer|: if |writer| has a `writevSync` method, call |writer|.{{SyncWriter/writevSync()}} with |batch|; otherwise call |writer|.{{SyncWriter/writeSync()}} for each chunk.
+<li>Synchronously iterate |pipeline|. For each |batch| yielded, for each |chunk| in |batch|, add |chunk|'s byte length to |totalBytes|. Then write the batch to |writer|: if |writer| has a `writevSync` method, call |writer|.{{SyncWriter/writevSync()}} with |batch|; otherwise call |writer|.{{SyncWriter/writeSync()}} for each chunk. If the write returns `false`, throw a {{RangeError}} indicating the destination's [=byte budget=] is exhausted.
 <li>On successful completion, if |preventClose| is `false` and |writer| has an `endSync` method, call |writer|.{{SyncWriter/endSync()}}.
 <li>On error |e|, if |preventFail| is `false` and |writer| has a `fail` method, call |writer|.{{SyncWriter/fail()}} with |e|. Re-throw |e|.
 <li>Return |totalBytes|.
@@ -971,7 +974,7 @@ The <dfn method for="Stream">ondrain(drainable)</dfn> method waits for a {{Write
 <ol>
 <li>If |drainable| does not have a method keyed by `Symbol.for('Stream.drainableProtocol')`, return `null`.
 <li>Let |result| be the result of calling that method on |drainable|.
-<li>Return |result|, which is: `null` if drain is not applicable; a promise resolving to `true` when backpressure clears; a promise resolving to `false` if the writer closes while waiting; or a promise that rejects if the writer errors.
+<li>Return |result|, which is: `null` if drain is not applicable; a promise resolving to `true` when the buffered bytes fall below the [=byte budget=]; a promise resolving to `false` if the writer closes while waiting; or a promise that rejects if the writer errors.
 </ol>
 </div>
 
@@ -990,9 +993,9 @@ Broadcast {#broadcast-section}
 The <dfn method for="Stream">broadcast(options)</dfn> method creates a [=broadcast channel=], a push-model multi-consumer pattern.
 
 <ol>
-<li>Let |highWaterMark| be the result of clamping |options|["{{BroadcastOptions/highWaterMark}}"] to the range [1, implementation-defined maximum].
+<li>Let |budget| be |options|["{{BroadcastOptions/budget}}"] if present; otherwise an implementation-defined default that must be at least 16384 bytes.
 <li>Let |backpressure| be |options|["{{BroadcastOptions/backpressure}}"].
-<li>Create a shared circular buffer with capacity |highWaterMark|.
+<li>Create a shared circular buffer with [=byte budget=] |budget|.
 <li>Let |writer| be a new {{Writer}} backed by the shared buffer with |backpressure| policy.
 <li>Let |broadcast| be a new {{Broadcast}} object backed by the shared buffer.
 <li>Return «[ "writer" → |writer|, "broadcast" → |broadcast| ]».
@@ -1001,19 +1004,19 @@ The <dfn method for="Stream">broadcast(options)</dfn> method creates a [=broadca
 
 ### Broadcast backpressure ### {#broadcast-backpressure}
 
-Backpressure in a [=broadcast channel=] is governed entirely by the **slowest consumer**. Each consumer maintains a cursor into the shared circular buffer. The {{Writer/desiredSize}} of the broadcast's {{Writer}} is determined by the consumer whose cursor is furthest behind: the consumer with the most unconsumed data.
+Backpressure in a [=broadcast channel=] is governed entirely by the **slowest consumer**. Each consumer maintains a cursor into the shared circular buffer. The {{Writer/canWrite}} state of the broadcast's {{Writer}} is determined by the consumer whose cursor is furthest behind: the consumer with the most unconsumed bytes.
 
 Concretely:
 
-*   The shared buffer cannot overwrite entries that the slowest consumer has not yet read. The effective buffer capacity, from the writer's perspective, is the distance between the write position and the slowest consumer's cursor.
+*   The shared buffer cannot overwrite entries that the slowest consumer has not yet read. The effective [=byte budget=], from the writer's perspective, is reduced by the unconsumed bytes between the write position and the slowest consumer's cursor.
 
-*   When the slowest consumer falls behind and the buffer fills, the configured [=backpressure policy=] applies to the writer: `"strict"` rejects excess writes, `"block"` causes writes to wait, `"drop-oldest"` advances the slowest cursor (discarding unread data for that consumer), and `"drop-newest"` discards incoming writes.
+*   When the slowest consumer falls behind and the [=byte budget=] is exhausted, the configured [=backpressure policy=] applies to the writer: `"strict"` rejects excess writes, `"unbounded"` causes writes to wait, `"drop-oldest"` advances the slowest cursor (discarding unread data for that consumer), and `"drop-newest"` discards incoming writes.
 
 *   Faster consumers that have already read all available data will wait for the next write. They are never the bottleneck.
 
 *   When a slow consumer detaches (its iterator returns or throws), backpressure is immediately recalculated based on the remaining consumers. This may unblock pending writes if the detached consumer was the slowest.
 
-*   If there are no consumers, writes succeed up to the buffer capacity as governed by the [=backpressure policy=]. Data remains in the buffer and is available to consumers that attach before it is overwritten. Late-joining consumers begin reading from the oldest entry still in the buffer at the time they call {{Broadcast/push()}}.
+*   If there are no consumers, writes succeed up to the [=byte budget=] as governed by the [=backpressure policy=]. Data remains in the buffer and is available to consumers that attach before it is overwritten. Late-joining consumers begin reading from the oldest entry still in the buffer at the time they call {{Broadcast/push()}}.
 
 Note: Because a single slow consumer can stall all producers, callers should consider using `"drop-oldest"` or `"drop-newest"` policies when consumers may have widely varying consumption rates and the data is tolerant of loss.
 
@@ -1048,9 +1051,9 @@ The <dfn method for="Stream">share(source, options)</dfn> method creates a [=sha
 
 <ol>
 <li>Let |normalized| be the result of {{Stream/from()}} with |source|.
-<li>Let |highWaterMark| be the result of clamping |options|["{{ShareOptions/highWaterMark}}"] to the range [1, implementation-defined maximum].
+<li>Let |budget| be |options|["{{ShareOptions/budget}}"] if present; otherwise an implementation-defined default that must be at least 16384 bytes.
 <li>Let |backpressure| be |options|["{{ShareOptions/backpressure}}"].
-<li>Create a shared buffer with capacity |highWaterMark|. The source iterator is created lazily on first pull.
+<li>Create a shared buffer with [=byte budget=] |budget|. The source iterator is created lazily on first pull.
 <li>Return a new {{Share}} object backed by the shared buffer, |backpressure| policy, and |normalized| as the upstream source.
 </ol>
 </div>
@@ -1067,7 +1070,7 @@ A [=shared source=] uses a shared buffer and per-consumer cursors in the same ma
 
 *   The shared buffer is trimmed as all consumers advance past buffered entries. An entry is eligible for removal only when every active consumer's cursor has moved beyond it.
 
-*   When the slowest consumer falls behind and the buffer reaches capacity, the configured [=backpressure policy=] determines what happens when a faster consumer attempts to pull new data from upstream. With `"strict"`, the pull is rejected. The faster consumer receives an error indicating the buffer is full, but the consumer's iterator remains valid and subsequent pulls may succeed once the slow consumer advances. With `"block"`, the pull is blocked until the slowest consumer advances and frees buffer space. With `"drop-oldest"`, the oldest entry is discarded (advancing the slowest cursor) to make room for the new upstream pull. With `"drop-newest"`, the upstream pull result is discarded.
+*   When the slowest consumer falls behind and the [=byte budget=] is exhausted, the configured [=backpressure policy=] determines what happens when a faster consumer attempts to pull new data from upstream. With `"strict"`, the pull is rejected. The faster consumer receives an error indicating the budget is exhausted, but the consumer's iterator remains valid and subsequent pulls may succeed once the slow consumer advances. With `"unbounded"`, the pull is blocked until the slowest consumer advances and frees budget capacity. With `"drop-oldest"`, the oldest entry is discarded (advancing the slowest cursor, freeing its byte size from the budget) to make room for the new upstream pull. With `"drop-newest"`, the upstream pull result is discarded.
 
 Note: A rejected pull under `"strict"` does not terminate the consumer's iterator. Within the constraints of the async iterator protocol, the `.next()` call returns a rejected promise, but the iterator is not put into a "done" state. The consumer may retry by calling `.next()` again. However, if the consumer is using `for await...of`, the rejected promise will cause the loop to exit and the iterator to be closed via `.return()`. This is standard async iterator protocol behavior, not specific to this API.
 
@@ -1100,9 +1103,9 @@ The <dfn method for="Stream">shareSync(source, options)</dfn> method creates a s
 
 <ol>
 <li>Let |normalized| be the result of {{Stream/fromSync()}} with |source|.
-<li>Let |highWaterMark| be the result of clamping |options|["{{ShareSyncOptions/highWaterMark}}"] to the range [1, implementation-defined maximum].
+<li>Let |budget| be |options|["{{ShareSyncOptions/budget}}"] if present; otherwise an implementation-defined default that must be at least 16384 bytes.
 <li>Let |backpressure| be |options|["{{ShareSyncOptions/backpressure}}"].
-<li>Create a shared buffer with capacity |highWaterMark|. The source iterator is created lazily on first pull.
+<li>Create a shared buffer with [=byte budget=] |budget|. The source iterator is created lazily on first pull.
 <li>Return a new {{SyncShare}} object backed by the shared buffer, |backpressure| policy, and |normalized| as the upstream source.
 </ol>
 </div>
@@ -1118,8 +1121,8 @@ Duplex channels {#duplex-section}
 The <dfn method for="Stream">duplex(options)</dfn> method creates a pair of connected {{DuplexChannel}} objects for bidirectional communication, similar to Unix `socketpair()`.
 
 <ol>
-<li>Let |sharedHWM| be |options|["{{DuplexOptions/highWaterMark}}"] and |sharedBP| be |options|["{{DuplexOptions/backpressure}}"].
-<li>Let |aOpts| be |options|["{{DuplexOptions/a}}"] merged with shared defaults, and |bOpts| be |options|["{{DuplexOptions/b}}"] merged with shared defaults.
+<li>Let |sharedBudget| be |options|["{{DuplexOptions/budget}}"] and |sharedBP| be |options|["{{DuplexOptions/backpressure}}"].
+<li>Let |aOpts| be |options|["{{DuplexOptions/a}}"] merged with shared defaults (using |sharedBudget| and |sharedBP|), and |bOpts| be |options|["{{DuplexOptions/b}}"] merged with shared defaults.
 <li>Create [=push stream=] A→B with |aOpts| settings, yielding |writerA| and |readableAB|.
 <li>Create [=push stream=] B→A with |bOpts| settings, yielding |writerB| and |readableBA|.
 <li>Let |channelA| be a new {{DuplexChannel}} with writer |writerA| (writes go to B), readable |readableBA| (reads come from B). Calling {{DuplexChannel/close()}} on |channelA| ends |writerA| (signaling end-of-stream to B's readable) and stops iteration of |readableBA| (by calling `.return()` on its iterator if active). The close is idempotent.
@@ -1176,7 +1179,7 @@ Drainable protocol {#protocol-drainable}
 <dl>
   <dt>`Symbol.for('Stream.drainableProtocol')`</dt>
   <dd>
-    A method returning `null` or a promise resolving to a boolean. Used by {{Stream/ondrain()}} to wait for backpressure to clear. Return values: `null` if drain is not applicable; promise resolving to `true` when ready; promise resolving to `false` if the writer closed; promise rejecting if the writer errored. {{Writer}} objects returned by {{Stream/push()}} and {{Stream/broadcast()}} automatically implement this protocol.
+    A method returning `null` or a promise resolving to a boolean. Used by {{Stream/ondrain()}} to wait for the [=byte budget=] to have capacity. Return values: `null` if drain is not applicable; promise resolving to `true` when the buffered bytes fall below the [=byte budget=]; promise resolving to `false` if the writer closed; promise rejecting if the writer errored. {{Writer}} objects returned by {{Stream/push()}} and {{Stream/broadcast()}} automatically implement this protocol.
   </dd>
 </dl>
 
