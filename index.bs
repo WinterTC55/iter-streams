@@ -3,8 +3,8 @@ Title: Iterable Streams API
 Shortname: iterable-streams
 Group: wintertc
 Status: DRAFT
-URL: https://stream-iter.jasnell.me/
-Repository: https://github.com/jasnell/new-streams
+URL: https://iter-streams.proposal.wintertc.org/
+Repository: https://github.com/WinterTC55/new-streams
 Editor: James M Snell, Cloudflare https://cloudflare.com/, jsnell@cloudflare.com
 Markup Shorthands: markdown yes
 No Abstract: yes
