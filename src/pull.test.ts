@@ -1,7 +1,7 @@
 /**
  * Tests for Pull Pipeline - pull(), pullSync(), pipeTo(), pipeToSync()
  *
- * Requirements covered: See https://github.com/jasnell/new-streams/blob/main/docs/REQUIREMENTS.md Sections 3-4 (PULL-xxx, PIPE-xxx)
+ * Requirements covered: See https://github.com/WinterTC55/iter-streams/blob/main/docs/REQUIREMENTS.md Sections 3-4 (PULL-xxx, PIPE-xxx)
  */
 
 import { describe, it } from 'node:test';

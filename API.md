@@ -48,7 +48,7 @@ console.log(text); // "Hello, World!"
 await producing;
 ```
 
-See [USAGE.md](https://github.com/jasnell/new-streams/blob/main/docs/USAGE.md) for more examples.
+See [USAGE.md](https://github.com/WinterTC55/iter-streams/blob/main/docs/USAGE.md) for more examples.
 
 ### Batched Iteration
 

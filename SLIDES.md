@@ -539,7 +539,7 @@ class: text-center
 
 # Thank you
 
-https://github.com/jasnell/new-streams
+https://github.com/WinterTC55/iter-streams
 
 BTW! I'm writing a book.
 

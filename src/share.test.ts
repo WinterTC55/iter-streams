@@ -1,7 +1,7 @@
 /**
  * Tests for Share - Pull-model multi-consumer streaming
  *
- * Requirements covered: See https://github.com/jasnell/new-streams/blob/main/docs/REQUIREMENTS.md Section 7 (SHARE-xxx)
+ * Requirements covered: See https://github.com/WinterTC55/iter-streams/blob/main/docs/REQUIREMENTS.md Section 7 (SHARE-xxx)
  */
 
 import { describe, it } from 'node:test';

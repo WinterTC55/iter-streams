@@ -2,7 +2,7 @@
  * Tests for Duplex Channel implementation
  *
  * Requirements covered: DUPLEX-001 through DUPLEX-012
- * @see https://github.com/jasnell/new-streams/blob/main/docs/REQUIREMENTS.md Section 11 (Stream.duplex())
+ * @see https://github.com/WinterTC55/iter-streams/blob/main/docs/REQUIREMENTS.md Section 11 (Stream.duplex())
  */
 
 import { describe, it } from 'node:test';

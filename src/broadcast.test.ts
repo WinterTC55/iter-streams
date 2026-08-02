@@ -1,7 +1,7 @@
 /**
  * Tests for Broadcast - Push-model multi-consumer streaming
  *
- * Requirements covered: See https://github.com/jasnell/new-streams/blob/main/docs/REQUIREMENTS.md Section 6 (BCAST-xxx)
+ * Requirements covered: See https://github.com/WinterTC55/iter-streams/blob/main/docs/REQUIREMENTS.md Section 6 (BCAST-xxx)
  */
 
 import { describe, it } from 'node:test';

@@ -19,7 +19,7 @@ document critiques Web Streams and presents design principles for a simpler, ite
 alternative.
 
 A complete reference implementation is available in this repository demonstrating these principles.
-See [DESIGN.md](https://github.com/jasnell/new-streams/blob/main/docs/DESIGN.md) for the API design and [API.md](API.md) for the complete API reference.
+See [DESIGN.md](https://github.com/WinterTC55/iter-streams/blob/main/docs/DESIGN.md) for the API design and [API.md](API.md) for the complete API reference.
 
 ## Table of Contents
 
@@ -164,15 +164,15 @@ A complete reference implementation is available in this repository demonstratin
 
 | Document | Description |
 |----------|-------------|
-| [DESIGN.md](https://github.com/jasnell/new-streams/blob/main/docs/DESIGN.md) | Comprehensive API design document covering push streams, pull pipelines, transforms, consumers, multi-consumer patterns, and protocol extensibility |
+| [DESIGN.md](https://github.com/WinterTC55/iter-streams/blob/main/docs/DESIGN.md) | Comprehensive API design document covering push streams, pull pipelines, transforms, consumers, multi-consumer patterns, and protocol extensibility |
 | [API.md](API.md) | Complete API reference for the reference implementation |
-| [USAGE.md](https://github.com/jasnell/new-streams/blob/main/docs/USAGE.md) | Guide to using the API with code examples |
-| [REQUIREMENTS.md](https://github.com/jasnell/new-streams/blob/main/docs/REQUIREMENTS.md) | Detailed list of testable assertions |
-| [MIGRATION.md](https://github.com/jasnell/new-streams/blob/main/docs/MIGRATION.md) | Guide for migrating from Web Streams API to this API |
-| [MIGRATION-NODEJS.md](https://github.com/jasnell/new-streams/blob/main/docs/MIGRATION-NODEJS.md) | Guide for migrating from Node.js streams to this API |
-| [DESIGN-TRADEOFFS.md](https://github.com/jasnell/new-streams/blob/main/docs/DESIGN-TRADEOFFS.md) | Discussion of design tradeoffs and rationale |
-| [COMPLETENESS-ANALYSIS.md](https://github.com/jasnell/new-streams/blob/main/docs/COMPLETENESS-ANALYSIS.md) | Analysis of feature completeness |
-| [TRANSFER-INTEGRATION.md](https://github.com/jasnell/new-streams/blob/main/docs/TRANSFER-INTEGRATION.md) | Design discussion: Transfer Protocol integration for ownership semantics |
+| [USAGE.md](https://github.com/WinterTC55/iter-streams/blob/main/docs/USAGE.md) | Guide to using the API with code examples |
+| [REQUIREMENTS.md](https://github.com/WinterTC55/iter-streams/blob/main/docs/REQUIREMENTS.md) | Detailed list of testable assertions |
+| [MIGRATION.md](https://github.com/WinterTC55/iter-streams/blob/main/docs/MIGRATION.md) | Guide for migrating from Web Streams API to this API |
+| [MIGRATION-NODEJS.md](https://github.com/WinterTC55/iter-streams/blob/main/docs/MIGRATION-NODEJS.md) | Guide for migrating from Node.js streams to this API |
+| [DESIGN-TRADEOFFS.md](https://github.com/WinterTC55/iter-streams/blob/main/docs/DESIGN-TRADEOFFS.md) | Discussion of design tradeoffs and rationale |
+| [COMPLETENESS-ANALYSIS.md](https://github.com/WinterTC55/iter-streams/blob/main/docs/COMPLETENESS-ANALYSIS.md) | Analysis of feature completeness |
+| [TRANSFER-INTEGRATION.md](https://github.com/WinterTC55/iter-streams/blob/main/docs/TRANSFER-INTEGRATION.md) | Design discussion: Transfer Protocol integration for ownership semantics |
 
 ### Code
 

@@ -4,7 +4,7 @@ Shortname: iterable-streams
 Group: wintertc
 Status: DRAFT
 URL: https://iter-streams.proposal.wintertc.org/
-Repository: https://github.com/WinterTC55/new-streams
+Repository: https://github.com/WinterTC55/iter-streams
 Editor: James M Snell, Cloudflare https://cloudflare.com/, jsnell@cloudflare.com
 Markup Shorthands: markdown yes
 No Abstract: yes
