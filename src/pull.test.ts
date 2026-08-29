@@ -386,6 +386,57 @@ describe('pull()', () => {
         await collectBytes(output);
       }, /Abort/);
     });
+
+    it('should reject a pending source next() when aborted', async () => {
+      const controller = new AbortController();
+      const reason = new DOMException('Aborted', 'AbortError');
+      let returned = false;
+      const source: AsyncIterable<Uint8Array[]> = {
+        [Symbol.asyncIterator]() {
+          return {
+            next() {
+              return new Promise<IteratorResult<Uint8Array[]>>(() => undefined);
+            },
+            return() {
+              returned = true;
+              return Promise.resolve({ done: true, value: undefined });
+            },
+          };
+        },
+      };
+
+      const iterator = pull(source, { signal: controller.signal })[Symbol.asyncIterator]();
+      const next = iterator.next();
+      controller.abort(reason);
+
+      await assert.rejects(next, { name: 'AbortError' });
+      assert.strictEqual(returned, true);
+    });
+
+    it('should reject future next() calls after abort', async () => {
+      const controller = new AbortController();
+      const reason = new DOMException('Aborted', 'AbortError');
+      const source = from('test');
+      const iterator = pull(source, { signal: controller.signal })[Symbol.asyncIterator]();
+
+      controller.abort(reason);
+
+      await assert.rejects(iterator.next(), { name: 'AbortError' });
+    });
+
+    it('should reject future next() calls after abort for sync sources without transforms', async () => {
+      const controller = new AbortController();
+      const reason = new DOMException('Aborted', 'AbortError');
+      const iterator = pull(['a', 'b'], { signal: controller.signal })[Symbol.asyncIterator]();
+
+      const first = await iterator.next();
+      assert.strictEqual(first.done, false);
+      assert.strictEqual(decode(concatBytes(first.value)), 'a');
+
+      controller.abort(reason);
+
+      await assert.rejects(iterator.next(), { name: 'AbortError' });
+    });
   });
 
   describe('error handling', () => {

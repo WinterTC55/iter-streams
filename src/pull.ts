@@ -16,6 +16,7 @@ import {
   type TransformCallbackOptions,
   type StatefulTransformFn,
   type TransformYield,
+  type AsyncStreamableYield,
   type AsyncTransformResult,
   type SyncTransform,
   type SyncTransformObject,
@@ -461,6 +462,76 @@ async function* syncToAsync<T>(source: Iterable<T>): AsyncGenerator<T> {
 }
 
 /**
+ * Return the standard abort reason for a signal.
+ */
+function getAbortReason(signal: AbortSignal): unknown {
+  return signal.reason ?? new DOMException('Aborted', 'AbortError');
+}
+
+/**
+ * Race an operation with an abort signal.
+ */
+function raceWithAbort<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    return Promise.reject(getAbortReason(signal));
+  }
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      reject(getAbortReason(signal));
+    };
+
+    signal.addEventListener('abort', onAbort, { once: true });
+
+    operation.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
+      }
+    );
+  });
+}
+
+/**
+ * Wrap an async iterable so pending next() calls reject on abort.
+ */
+async function* abortableAsyncIterable<T>(
+  source: AsyncIterable<T>,
+  signal: AbortSignal
+): AsyncGenerator<T> {
+  const iterator = source[Symbol.asyncIterator]();
+  let completed = false;
+
+  try {
+    while (true) {
+      const result = await raceWithAbort(Promise.resolve(iterator.next()), signal);
+      if (result.done) {
+        completed = true;
+        return;
+      }
+      yield result.value;
+    }
+  } finally {
+    if (!completed && typeof iterator.return === 'function') {
+      try {
+        const returned = Promise.resolve(iterator.return());
+        if (!signal.aborted) {
+          await returned;
+        } else {
+          returned.catch(() => undefined);
+        }
+      } catch {
+        // Suppress return() failures during teardown.
+      }
+    }
+  }
+}
+
+/**
  * Create an async pipeline from source through transforms.
  */
 async function* createAsyncPipeline(
@@ -470,13 +541,29 @@ async function* createAsyncPipeline(
 ): AsyncGenerator<Uint8Array[]> {
   // Check for abort
   if (signal?.aborted) {
-    throw signal.reason ?? new DOMException('Aborted', 'AbortError');
+    throw getAbortReason(signal);
+  }
+
+  const controller = new AbortController();
+  let abortHandler: (() => void) | undefined;
+  if (signal) {
+    abortHandler = () => {
+      try {
+        controller.abort(getAbortReason(signal));
+      } catch { /* transform signal listeners may throw — suppress */ }
+    };
+    signal.addEventListener('abort', abortHandler);
   }
 
   // Normalize source to async
   let normalized: AsyncIterable<Uint8Array[]>;
   if (isAsyncIterable(source)) {
-    normalized = normalizeAsyncSource(source);
+    normalized = normalizeAsyncSource(
+      abortableAsyncIterable(
+        source as AsyncIterable<AsyncStreamableYield>,
+        controller.signal
+      )
+    );
   } else if (isSyncIterable(source)) {
     normalized = syncToAsync(normalizeSyncSource(source as SyncStreamable));
   } else {
@@ -485,26 +572,23 @@ async function* createAsyncPipeline(
 
   // Fast path: no transforms, just yield normalized source directly
   if (transforms.length === 0) {
-    for await (const batch of normalized) {
-      if (signal?.aborted) {
-        throw signal.reason ?? new DOMException('Aborted', 'AbortError');
+    let completed = false;
+    try {
+      for await (const batch of abortableAsyncIterable(normalized, controller.signal)) {
+        yield batch;
       }
-      yield batch;
+      completed = true;
+    } finally {
+      if (!completed && !controller.signal.aborted) {
+        try {
+          controller.abort(new DOMException('Aborted', 'AbortError'));
+        } catch { /* transform signal listeners may throw — suppress */ }
+      }
+      if (signal && abortHandler) {
+        signal.removeEventListener('abort', abortHandler);
+      }
     }
     return;
-  }
-
-  // Create internal controller for transform cancellation.
-  // Note: if signal was already aborted, we threw above — no need to check here.
-  const controller = new AbortController();
-  let abortHandler: (() => void) | undefined;
-  if (signal) {
-    abortHandler = () => {
-      try {
-        controller.abort(signal.reason ?? new DOMException('Aborted', 'AbortError'));
-      } catch { /* transform signal listeners may throw — suppress */ }
-    };
-    signal.addEventListener('abort', abortHandler);
   }
 
   // Add flush signal
@@ -524,11 +608,7 @@ async function* createAsyncPipeline(
   // Yield results (filter out null from final output)
   let completed = false;
   try {
-    for await (const batch of current) {
-      // Check for abort on each iteration
-      if (controller.signal.aborted) {
-        throw controller.signal.reason ?? new DOMException('Aborted', 'AbortError');
-      }
+    for await (const batch of abortableAsyncIterable(current, controller.signal)) {
       if (batch !== null) {
         yield batch;
       }

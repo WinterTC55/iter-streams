@@ -515,6 +515,12 @@ The pipeline always creates an internal `AbortController` whose signal is passed
 to transforms via `TransformCallbackOptions`. If an external signal is provided,
 the internal signal follows it. When aborted, on error, or when the consumer
 stops iterating, the internal controller is aborted, notifying all transforms.
+Aborting the external signal rejects pending and future pulls from the returned
+async iterable with the signal's abort reason. If the pipeline aborts while
+waiting for an upstream source iterator's `next()` result, the pipeline rejects
+the consumer's pending pull and calls the source iterator's `return()` method
+when available. This does not require canceling the promise returned by the
+upstream `next()` call.
 
 ```typescript
 function pull(
