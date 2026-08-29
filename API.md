@@ -491,8 +491,11 @@ Create a sync iterable from various sources. Throws `TypeError` if input is
 `null` or `undefined`. Like `from()`, this normalizes inputs to the consistent
 `Uint8Array[]` batch format, handling type conversions, recursive flattening,
 and [protocol handling](#tostreamable--toasyncstreamable), but for synchronous
-sources only. Async inputs (objects with `Symbol.asyncIterator` or
-`Symbol.for('Stream.toAsyncStreamable')`) cause a `TypeError`.
+sources only. The `toAsyncStreamable` protocol is ignored (not checked or
+rejected). Explicit async inputs are rejected with a `TypeError`: objects with
+`Symbol.asyncIterator` and no synchronous interface, and `Promise` objects, even
+if the promise would resolve to a synchronous streamable type such as a string,
+`Uint8Array`, or iterable.
 
 ```typescript
 function fromSync(
