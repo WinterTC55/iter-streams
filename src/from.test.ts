@@ -1,7 +1,7 @@
 /**
  * Tests for Stream Factories - from() and fromSync()
  *
- * Requirements covered: See https://github.com/jasnell/new-streams/blob/main/docs/REQUIREMENTS.md Section 2 (FROM-xxx)
+ * Requirements covered: See https://github.com/WinterTC55/iter-streams/blob/main/docs/REQUIREMENTS.md Section 2 (FROM-xxx)
  */
 
 import { describe, it } from 'node:test';

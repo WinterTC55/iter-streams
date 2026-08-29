@@ -1,7 +1,7 @@
 /**
  * Tests for Convenience Consumers & Utilities
  *
- * Requirements covered: See https://github.com/jasnell/new-streams/blob/main/docs/REQUIREMENTS.md Sections 5, 8, 9 (BYTES-xxx, TEXT-xxx, ARRAYBUF-xxx, MERGE-xxx, TAP-xxx)
+ * Requirements covered: See https://github.com/WinterTC55/iter-streams/blob/main/docs/REQUIREMENTS.md Sections 5, 8, 9 (BYTES-xxx, TEXT-xxx, ARRAYBUF-xxx, MERGE-xxx, TAP-xxx)
  */
 
 import { describe, it } from 'node:test';

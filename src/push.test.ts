@@ -2,7 +2,7 @@
  * Tests for Push Stream implementation
  * 
  * Requirements covered: PUSH-001 through PUSH-084
- * @see https://github.com/jasnell/new-streams/blob/main/docs/REQUIREMENTS.md Section 1 (Stream.push())
+ * @see https://github.com/WinterTC55/iter-streams/blob/main/docs/REQUIREMENTS.md Section 1 (Stream.push())
  */
 
 import { describe, it } from 'node:test';
