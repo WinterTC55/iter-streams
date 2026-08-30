@@ -186,11 +186,11 @@ Charlie,35,Chicago`;
 
   {
     // Use broadcast for multi-consumer pattern
-    const { writer, broadcast } = Stream.broadcast();
+    const { writer, channel } = Stream.broadcast();
 
     // Create branches
-    const logBranch = broadcast.push();
-    const processBranch = broadcast.push();
+    const logBranch = channel.push();
+    const processBranch = channel.push();
 
     // Log in background
     const logPromise = (async () => {

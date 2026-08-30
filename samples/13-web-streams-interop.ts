@@ -541,11 +541,11 @@ async function main() {
   section('Example 11: Tee to Web and New Stream');
 
   {
-    const { writer, broadcast } = Stream.broadcast();
+    const { writer, channel } = Stream.broadcast();
 
     // Create branches
-    const webBranch = broadcast.push();
-    const mainBranch = broadcast.push();
+    const webBranch = channel.push();
+    const mainBranch = channel.push();
 
     // Convert branch to Web ReadableStream for web consumers
     const webReadable = toReadableStream(webBranch);

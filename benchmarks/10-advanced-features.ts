@@ -66,11 +66,11 @@ async function runBenchmarks(): Promise<void> {
     const broadcastResult = await benchmark(
       'broadcast()',
       async () => {
-        const { writer, broadcast } = Stream.broadcast({ highWaterMark: 1000 });
+        const { writer, channel } = Stream.broadcast({ highWaterMark: 1000 });
 
         // Create two consumers
-        const consumer1 = broadcast.push();
-        const consumer2 = broadcast.push();
+        const consumer1 = channel.push();
+        const consumer2 = channel.push();
 
         // Producer task
         const producerTask = (async () => {
@@ -140,10 +140,10 @@ async function runBenchmarks(): Promise<void> {
     const broadcastResult = await benchmark(
       'broadcast()+transform',
       async () => {
-        const { writer, broadcast } = Stream.broadcast({ highWaterMark: 1000 });
+        const { writer, channel } = Stream.broadcast({ highWaterMark: 1000 });
 
-        const consumer1 = broadcast.push();
-        const consumer2 = broadcast.push(xorTransform);
+        const consumer1 = channel.push();
+        const consumer2 = channel.push(xorTransform);
 
         const producerTask = (async () => {
           for (const chunk of chunks) {
@@ -597,13 +597,13 @@ async function runBenchmarks(): Promise<void> {
       const result = await benchmark(
         `${policy}`,
         async () => {
-          const { writer, broadcast } = Stream.broadcast({
+          const { writer, channel } = Stream.broadcast({
             highWaterMark: 50,
             backpressure: policy,
           });
 
           // Create a slow consumer (will cause backpressure)
-          const consumer = broadcast.push();
+          const consumer = channel.push();
 
           // Fast producer
           const producerTask = (async () => {
@@ -735,7 +735,7 @@ async function runBenchmarks(): Promise<void> {
       const result = await benchmark(
         `broadcast ${numConsumers} consumers`,
         async () => {
-          const { writer, broadcast } = Stream.broadcast({
+          const { writer, channel } = Stream.broadcast({
             highWaterMark: 50,
             backpressure: 'block',
           });
@@ -743,7 +743,7 @@ async function runBenchmarks(): Promise<void> {
           // Create N consumers
           const consumers: AsyncIterable<Uint8Array[]>[] = [];
           for (let i = 0; i < numConsumers; i++) {
-            consumers.push(broadcast.push());
+            consumers.push(channel.push());
           }
 
           // Producer writes all chunks then ends

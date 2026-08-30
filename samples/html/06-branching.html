@@ -124,11 +124,11 @@
         
         // Basic broadcast - multiple consumers see same data
         {
-          const { writer, broadcast } = Stream.broadcast({ highWaterMark: 100 });
+          const { writer, channel } = Stream.broadcast({ highWaterMark: 100 });
           
           // Create multiple consumers
-          const consumer1 = broadcast.push();
-          const consumer2 = broadcast.push();
+          const consumer1 = channel.push();
+          const consumer2 = channel.push();
           
           // Write data - both consumers will see it
           (async () => {
@@ -149,13 +149,13 @@
         
         // Multiple consumers with different transforms
         {
-          const { writer, broadcast } = Stream.broadcast({ highWaterMark: 100 });
+          const { writer, channel } = Stream.broadcast({ highWaterMark: 100 });
           
           // Consumer without transform
-          const raw = broadcast.push();
+          const raw = channel.push();
           
           // Consumer with transform
-          const transformed = broadcast.push(uppercaseTransform());
+          const transformed = channel.push(uppercaseTransform());
           
           (async () => {
             await writer.write('Hello World');
@@ -228,7 +228,7 @@
         section('Dynamic consumers');
         
         {
-          const { writer, broadcast } = Stream.broadcast({ highWaterMark: 100 });
+          const { writer, channel } = Stream.broadcast({ highWaterMark: 100 });
           
           // Start writing
           const writePromise = (async () => {
@@ -241,11 +241,11 @@
           })();
           
           // Early consumer - sees everything
-          const early = broadcast.push();
+          const early = channel.push();
           
           // Wait a bit, then add late consumer
           await new Promise(r => setTimeout(r, 15));
-          const late = broadcast.push();
+          const late = channel.push();
           
           await writePromise;
           
@@ -266,7 +266,7 @@
         section('Fan-out pattern');
         
         {
-          const { writer, broadcast } = Stream.broadcast({ highWaterMark: 100 });
+          const { writer, channel } = Stream.broadcast({ highWaterMark: 100 });
           
           // Create a transform factory that adds a prefix to each chunk
           function addPrefix(prefix) {
@@ -278,9 +278,9 @@
             };
           }
           
-          const logProcessor = broadcast.push(addPrefix('LOG'));
-          const alertProcessor = broadcast.push(addPrefix('ALERT'));
-          const archiveProcessor = broadcast.push(addPrefix('ARCHIVE'));
+          const logProcessor = channel.push(addPrefix('LOG'));
+          const alertProcessor = channel.push(addPrefix('ALERT'));
+          const archiveProcessor = channel.push(addPrefix('ARCHIVE'));
           
           (async () => {
             await writer.write('system event');

@@ -215,12 +215,12 @@ async function main() {
   section('Broadcast with backpressure');
 
   {
-    const { writer, broadcast } = Stream.broadcast({
+    const { writer, channel } = Stream.broadcast({
       highWaterMark: 3,
       backpressure: 'strict'
     });
 
-    const consumer = broadcast.push();
+    const consumer = channel.push();
 
     console.log('Broadcast highWaterMark: 3');
 

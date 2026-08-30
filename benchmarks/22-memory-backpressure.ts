@@ -92,12 +92,12 @@ for (const policy of policies) {
       for (const hwm of hwmValues) {
         bench(`bcast ${policy} hwm=${hwm}`, function* () {
           yield async () => {
-            const { writer, broadcast } = Stream.broadcast({
+            const { writer, channel } = Stream.broadcast({
               highWaterMark: hwm,
               backpressure: policy,
             });
-            const c1 = broadcast.push();
-            const c2 = broadcast.push();
+            const c1 = channel.push();
+            const c2 = channel.push();
 
             const producing = (async () => {
               if (policy === 'drop-oldest' || policy === 'drop-newest') {

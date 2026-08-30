@@ -106,16 +106,16 @@ async function main() {
   section('Broadcast with Symbol.dispose');
 
   {
-    const { writer, broadcast } = Stream.broadcast();
+    const { writer, channel } = Stream.broadcast();
 
     // Check for Symbol.dispose
-    console.log('Broadcast has Symbol.dispose:', Symbol.dispose in broadcast);
+    console.log('Broadcast has Symbol.dispose:', Symbol.dispose in channel);
 
     // Create consumers
-    const consumer1 = broadcast.push();
-    const consumer2 = broadcast.push();
+    const consumer1 = channel.push();
+    const consumer2 = channel.push();
 
-    console.log('Consumer count:', broadcast.consumerCount);
+    console.log('Consumer count:', channel.consumerCount);
 
     // Start consuming in background
     const promise1 = Stream.text(consumer1).catch((e) => `Consumer1 error: ${(e as Error).message}`);
@@ -125,9 +125,9 @@ async function main() {
     await writer.write('broadcast data');
 
     // Cancel all consumers using Symbol.dispose (same as .cancel())
-    broadcast[Symbol.dispose]();
+    channel[Symbol.dispose]();
 
-    // Or equivalently: broadcast.cancel();
+    // Or equivalently: channel.cancel();
 
     const [result1, result2] = await Promise.all([promise1, promise2]);
     console.log('Results after dispose:', { result1: result1.slice(0, 30), result2: result2.slice(0, 30) });
@@ -140,10 +140,10 @@ async function main() {
     let consumerCleanedUp = false;
 
     {
-      const { writer, broadcast } = Stream.broadcast();
-      using _ = broadcast; // Will call Symbol.dispose on scope exit
+      const { writer, channel } = Stream.broadcast();
+      using _ = channel; // Will call Symbol.dispose on scope exit
 
-      const consumer = broadcast.push();
+      const consumer = channel.push();
 
       // Start consuming
       const textPromise = Stream.text(consumer).catch(() => {
@@ -154,7 +154,7 @@ async function main() {
       await writer.write('data in using block');
 
       console.log('  Leaving using block...');
-      // broadcast[Symbol.dispose]() called automatically here
+      // channel[Symbol.dispose]() called automatically here
     }
 
     await new Promise((r) => setTimeout(r, 50));

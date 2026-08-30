@@ -350,11 +350,11 @@ const bytesWritten = await Stream.pipeTo(
 ### Broadcast (Push)
 
 ```typescript
-const { writer, broadcast } =
+const { writer, channel } =
   Stream.broadcast({ highWaterMark: 100 });
 
-const c1 = broadcast.push();
-const c2 = broadcast.push(decompress);
+const c1 = channel.push();
+const c2 = channel.push(decompress);
 
 // Producer and consumers run concurrently
 (async () => {

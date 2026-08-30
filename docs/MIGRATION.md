@@ -599,10 +599,10 @@ const [result1, result2] = await Promise.all([
 **New Stream API - Push Model (broadcast):**
 ```javascript
 // broadcast() - push-based, producer controls data flow
-const { writer, broadcast } = Stream.broadcast();
+const { writer, channel } = Stream.broadcast();
 
-const consumer1 = broadcast.push();
-const consumer2 = broadcast.push();
+const consumer1 = channel.push();
+const consumer2 = channel.push();
 
 // Producer pushes to all consumers
 await writer.write('shared data');
@@ -642,7 +642,7 @@ const shared = Stream.share(source, {
   backpressure: 'drop-oldest'  // or 'strict', 'block', 'drop-newest'
 });
 
-const { writer, broadcast } = Stream.broadcast({
+const { writer, channel } = Stream.broadcast({
   highWaterMark: 100,
   backpressure: 'block'  // Wait for space (use 'strict' to reject)
 });
@@ -772,9 +772,9 @@ try {
 
 // Async cleanup with 'await using'
 {
-  const { writer, broadcast } = Stream.broadcast();
-  await using _ = broadcast;  // Will cancel on scope exit
-  // Use broadcast...
+  const { writer, channel } = Stream.broadcast();
+  await using _ = channel;  // Will cancel on scope exit
+  // Use channel...
 }
 ```
 
