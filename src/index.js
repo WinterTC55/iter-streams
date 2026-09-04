@@ -85,11 +85,13 @@ exports.Stream = {
     text: consumers_js_1.text,
     arrayBuffer: consumers_js_1.arrayBuffer,
     array: consumers_js_1.array,
+    dump: consumers_js_1.dump,
     // Consumers (sync)
     bytesSync: consumers_js_1.bytesSync,
     textSync: consumers_js_1.textSync,
     arrayBufferSync: consumers_js_1.arrayBufferSync,
     arraySync: consumers_js_1.arraySync,
+    dumpSync: consumers_js_1.dumpSync,
     // Combining
     merge: consumers_js_1.merge,
     // Multi-consumer (push model)

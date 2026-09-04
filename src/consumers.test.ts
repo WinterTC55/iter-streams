@@ -6,6 +6,8 @@
 
 import { describe, it } from 'node:test';
 import * as assert from 'node:assert';
+import v8 from 'node:v8';
+import vm from 'node:vm';
 import {
   bytes,
   bytesSync,
@@ -15,6 +17,8 @@ import {
   arrayBufferSync,
   array,
   arraySync,
+  dump,
+  dumpSync,
   tap,
   tapSync,
   merge,
@@ -28,6 +32,34 @@ async function* delayedSource(items: string[], delayMs: number) {
     await new Promise((resolve) => setTimeout(resolve, delayMs));
     yield [new TextEncoder().encode(item)];
   }
+}
+
+// Obtain a gc() without requiring the test runner to pass --expose-gc.
+const gc: (() => void) | undefined = (() => {
+  const existing = (globalThis as { gc?: () => void }).gc;
+  if (existing) return existing;
+  try {
+    v8.setFlagsFromString('--expose-gc');
+    const fn = vm.runInNewContext('gc') as () => void;
+    v8.setFlagsFromString('--no-expose-gc');
+    return fn;
+  } catch {
+    return undefined;
+  }
+})();
+
+/**
+ * Run gc() until condition() holds, or give up after maxCount attempts.
+ * Returns whether the condition was met.
+ */
+async function gcUntil(condition: () => boolean, maxCount = 10) {
+  if (!gc) return false;
+  for (let i = 0; i < maxCount; i++) {
+    await new Promise((resolve) => setImmediate(resolve));
+    gc();
+    if (condition()) return true;
+  }
+  return false;
 }
 
 describe('bytesSync()', () => {
@@ -294,6 +326,207 @@ describe('array()', () => {
     const source2 = from(['Hello', ', ', 'World!']);
     const bytesResult = await bytes(source2);
     assert.strictEqual(new TextDecoder().decode(bytesResult), 'Hello, World!');
+  });
+});
+
+describe('dumpSync()', () => {
+  it('should read a sync source to completion [DUMP-002, DUMP-012]', () => {
+    let pulls = 0;
+    function* gen() {
+      for (let i = 0; i < 5; i++) {
+        pulls++;
+        yield [new Uint8Array([i])];
+      }
+    }
+    dumpSync(gen());
+    assert.strictEqual(pulls, 5);
+  });
+
+  it('should return undefined [DUMP-013]', () => {
+    assert.strictEqual(dumpSync(fromSync('hello')), undefined);
+  });
+
+  it('should handle an empty source [DUMP-005]', () => {
+    assert.strictEqual(dumpSync(fromSync([])), undefined);
+  });
+
+  it('should throw if the source throws mid-stream [DUMP-014]', () => {
+    function* failing() {
+      yield [new Uint8Array([1])];
+      throw new Error('sync boom');
+    }
+    assert.throws(() => dumpSync(failing()), /sync boom/);
+  });
+
+  it('should respect byte limit [DUMP-015]', () => {
+    const source = fromSync('Hello, World!');
+    assert.throws(
+      () => dumpSync(source, { limit: 5 }),
+      /Stream exceeded byte limit of 5/
+    );
+  });
+
+  it('should allow data within limit [DUMP-015]', () => {
+    assert.strictEqual(dumpSync(fromSync('hello'), { limit: 100 }), undefined);
+  });
+
+  it('should throw TypeError on an async-only source [DUMP-016]', () => {
+    async function* asyncGen() {
+      yield [new Uint8Array([1])];
+    }
+    assert.throws(
+      () => dumpSync(asyncGen() as unknown as Iterable<Uint8Array[]>),
+      TypeError
+    );
+  });
+});
+
+describe('dump()', () => {
+  it('should read an async source to completion [DUMP-001]', async () => {
+    let pulls = 0;
+    async function* gen() {
+      for (let i = 0; i < 5; i++) {
+        pulls++;
+        yield [new Uint8Array([i])];
+      }
+    }
+    await dump(gen());
+    assert.strictEqual(pulls, 5);
+  });
+
+  it('should fulfill with undefined [DUMP-003]', async () => {
+    assert.strictEqual(await dump(from('hello')), undefined);
+  });
+
+  it('should retain no data [DUMP-004]', async (t) => {
+    if (!gc) return t.skip('gc unavailable');
+
+    // Allocate a distinct buffer per chunk and keep only weak references.
+    // Whatever the consumer retained is still reachable afterwards, and
+    // whatever it discarded is collectable. A single pooled buffer would
+    // prove nothing: it stays reachable either way.
+    const kChunks = 64;
+
+    async function measure(
+      consumer: (s: AsyncIterable<Uint8Array[]>) => Promise<unknown>,
+      keepResult: boolean
+    ) {
+      const refs: WeakRef<Uint8Array>[] = [];
+      async function* source() {
+        for (let i = 0; i < kChunks; i++) {
+          const buf = new Uint8Array(64 * 1024);
+          refs.push(new WeakRef(buf));
+          yield [buf];
+        }
+      }
+      const result = await consumer(source());
+      let live = kChunks;
+      const settled = await gcUntil(() => {
+        live = refs.filter((ref) => ref.deref() !== undefined).length;
+        return live === 0;
+      });
+      // Keep the collecting consumer's result reachable across the gc, so
+      // what is measured is its retention rather than the result being
+      // dropped.
+      if (keepResult) assert.strictEqual((result as unknown[]).length, kChunks);
+      return { settled, live };
+    }
+
+    const dumped = await measure(dump, false);
+    assert.ok(
+      dumped.settled,
+      `dump() retained ${dumped.live}/${kChunks} chunks`
+    );
+
+    // Positive control: array() retains every chunk. Without this the test
+    // could pass simply because the collector reclaimed everything anyway.
+    // bytes() will not do here -- it concatenates into a new buffer, so the
+    // original chunks become collectable for it too.
+    const collected = await measure(array, true);
+    assert.strictEqual(collected.live, kChunks);
+  });
+
+  it('should handle an empty source [DUMP-005]', async () => {
+    assert.strictEqual(await dump(from([])), undefined);
+  });
+
+  it('should reject if the source errors mid-stream [DUMP-006]', async () => {
+    async function* failing() {
+      yield [new Uint8Array([1])];
+      throw new Error('async boom');
+    }
+    await assert.rejects(async () => await dump(failing()), /async boom/);
+  });
+
+  it('should respect AbortSignal [DUMP-007, DUMP-008]', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await assert.rejects(
+      async () => await dump(from('test'), { signal: controller.signal }),
+      /Abort/
+    );
+  });
+
+  it('should respect byte limit [DUMP-009]', async () => {
+    await assert.rejects(
+      async () => await dump(from('Hello, World!'), { limit: 5 }),
+      /Stream exceeded byte limit of 5/
+    );
+  });
+
+  it('should release the source on abrupt completion [DUMP-011]', async () => {
+    let returned = false;
+    const source = {
+      async *[Symbol.asyncIterator]() {
+        try {
+          while (true) yield [new Uint8Array(64)];
+        } finally {
+          returned = true;
+        }
+      },
+    };
+    await assert.rejects(
+      async () => await dump(source, { limit: 128 }),
+      /Stream exceeded byte limit of 128/
+    );
+    assert.strictEqual(returned, true);
+  });
+
+  it('should accept a sync source [DUMP-002]', async () => {
+    assert.strictEqual(await dump(fromSync('sync source')), undefined);
+  });
+
+  it('should not inspect chunks when no limit is set [DUMP-010]', async () => {
+    // byteLength throws, so this only completes if dump() never reads it.
+    const hostile = Object.defineProperty(new Uint8Array(4), 'byteLength', {
+      get() {
+        throw new Error('byteLength must not be read without a limit');
+      },
+    });
+    async function* gen() {
+      yield [hostile];
+    }
+    assert.strictEqual(await dump(gen()), undefined);
+
+    // With a limit it must inspect, and therefore surface the getter's throw.
+    async function* gen2() {
+      yield [hostile];
+    }
+    await assert.rejects(
+      async () => await dump(gen2(), { limit: 10 }),
+      /byteLength must not be read/
+    );
+  });
+
+  it('should observe without retaining when combined with tap()', async () => {
+    let total = 0;
+    const counter = tap((chunks) => {
+      if (chunks !== null) {
+        for (const chunk of chunks) total += chunk.byteLength;
+      }
+    });
+    await dump(pull(from('hello world'), counter));
+    assert.strictEqual(total, 11);
   });
 });
 

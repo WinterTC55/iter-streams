@@ -329,6 +329,27 @@ Terminal consumers that collect streams into memory.
 | ARRAY-009 | array() respects byte limit | ✅ |
 | ARRAY-010 | array() preserves chunk boundaries | ✅ |
 
+### 5.5 Stream.dump() / Stream.dumpSync()
+
+| ID | Requirement | Status |
+|----|-------------|--------|
+| DUMP-001 | dump() reads an async source to completion | ✅ |
+| DUMP-002 | dump() reads a sync source to completion | ✅ |
+| DUMP-003 | dump() fulfills with undefined | ✅ |
+| DUMP-004 | dump() retains no data (peak memory is one batch) | ✅ |
+| DUMP-005 | dump() handles an empty source | ✅ |
+| DUMP-006 | dump() rejects if the source errors mid-stream | ✅ |
+| DUMP-007 | dump() respects AbortSignal | ✅ |
+| DUMP-008 | dump() rejects if an already-aborted signal is passed | ✅ |
+| DUMP-009 | dump() respects byte limit | ✅ |
+| DUMP-010 | dump() performs no byte accounting when limit is absent | ✅ |
+| DUMP-011 | dump() releases the source on abrupt completion | ✅ |
+| DUMP-012 | dumpSync() reads a sync source to completion | ✅ |
+| DUMP-013 | dumpSync() returns undefined | ✅ |
+| DUMP-014 | dumpSync() throws if the source throws mid-stream | ✅ |
+| DUMP-015 | dumpSync() respects byte limit | ✅ |
+| DUMP-016 | dumpSync() throws TypeError on an async-only source | ✅ |
+
 ---
 
 ## 6. Stream.broadcast()

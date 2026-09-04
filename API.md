@@ -91,12 +91,14 @@ Stream.bytes()           // Collect as Uint8Array
 Stream.text()            // Collect as string
 Stream.arrayBuffer()     // Collect as ArrayBuffer
 Stream.array()           // Collect as Uint8Array[]
+Stream.dump()            // Read to completion, retain nothing
 
 // Sync Consumers (Terminal)
 Stream.bytesSync()       // Sync collect as Uint8Array
 Stream.textSync()        // Sync collect as string
 Stream.arrayBufferSync() // Sync collect as ArrayBuffer
 Stream.arraySync()       // Sync collect as Uint8Array[]
+Stream.dumpSync()        // Sync read to completion, retain nothing
 
 // Multi-Consumer
 Stream.broadcast()       // Push-model multi-consumer
@@ -813,6 +815,55 @@ for (const chunk of chunks) {
 }
 ```
 
+### `Stream.dump(source, options?)`
+
+Read a source to completion and discard everything it yields. Every other
+consumer retains what it reads; `dump()` retains nothing, so its peak memory is
+one batch no matter how much the source produces.
+
+This exists because reading is not only how you obtain data, it is also what
+releases a source's backpressure budget. For some sources, reading is what releases
+resources held on the producer's behalf. A source whose payload you do not want
+still has to be read rather than abandoned. `bytes(source)` achieves that too,
+but allocates the entire payload in order to throw it away.
+
+```typescript
+function dump(
+  source: any,  // Any input Stream.from() can normalize
+  options?: ConsumeOptions
+): Promise<undefined>
+```
+
+**Options:**
+- `signal?: AbortSignal` - Cancellation signal
+- `limit?: number` - Max bytes (throws `RangeError` if exceeded)
+
+There is no default `limit`: a source is read to completion unless the caller
+asks for a bound. When `limit` is absent no byte accounting is performed.
+
+Ending for any reason other than normal completion such as a source error, an abort,
+or exceeding `limit`, rejects and releases the source. A partial read is never
+reported as success.
+
+**Example:**
+```typescript
+// Read and discard, retaining nothing.
+await Stream.dump(source);
+
+// Replaces the discard-loop idiom.
+for await (const _ of source) { }  // before
+await Stream.dump(source);        // after
+
+// Observe without retaining, by combining with tap().
+let total = 0;
+await Stream.dump(Stream.pull(source, Stream.tap((chunks) => {
+  if (chunks !== null) for (const c of chunks) total += c.byteLength;
+})));
+
+// Bound the work when the source may be unexpectedly large.
+await Stream.dump(source, { limit: 1024 * 1024 });
+```
+
 ### Sync Variants
 
 Synchronous versions for use with sync sources. Same algorithms as async
@@ -827,6 +878,7 @@ Stream.bytesSync(source, options?: ConsumeSyncOptions)
 Stream.textSync(source, options?: TextConsumeSyncOptions)
 Stream.arrayBufferSync(source, options?: ConsumeSyncOptions)
 Stream.arraySync(source, options?: ConsumeSyncOptions)
+Stream.dumpSync(source, options?: ConsumeSyncOptions)
 ```
 
 ---
