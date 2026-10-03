@@ -475,6 +475,8 @@ namespace Stream {
   ArrayBuffer arrayBufferSync(any source, optional ConsumeSyncOptions options = {});
   Promise&lt;sequence&lt;Uint8Array>> array(any source, optional ConsumeOptions options = {});
   sequence&lt;Uint8Array> arraySync(any source, optional ConsumeSyncOptions options = {});
+  Promise&lt;undefined> dump(any source, optional ConsumeOptions options = {});
+  undefined dumpSync(any source, optional ConsumeSyncOptions options = {});
 
   /* Utilities */
   StatelessTransformFn tap(any callback);
@@ -845,7 +847,7 @@ The <dfn method for="Stream">pipeToSync(source, ...args)</dfn> method is the syn
 Consumers {#consumers}
 ======================
 
-Consumer functions are terminal operations that collect an entire stream into memory. All consumers accept any input that {{Stream/from()}} can normalize. The optional `limit` parameter protects against unbounded memory growth; exceeding it throws a {{RangeError}}.
+Consumer functions are terminal operations that read a stream to completion. All of them except {{Stream/dump()}} collect the stream into memory; {{Stream/dump()}} reads the stream and discards it, retaining nothing beyond the current batch. All consumers accept any input that {{Stream/from()}} can normalize. The optional `limit` parameter bounds the number of bytes a consumer will read; exceeding it throws a {{RangeError}}. For the collecting consumers this protects against unbounded memory growth, and for {{Stream/dump()}} against unbounded work.
 
 `Stream.bytes()` / `Stream.bytesSync()` {#bytes-method}
 --------------------------------------------------------
@@ -920,6 +922,33 @@ The <dfn method for="Stream">array(source, options)</dfn> method collects all ch
 </div>
 
 The <dfn method for="Stream">arraySync(source, options)</dfn> method performs the same algorithm synchronously.
+
+`Stream.dump()` / `Stream.dumpSync()` {#dump-method}
+--------------------------------------------------------
+
+<div algorithm>
+The <dfn method for="Stream">dump(source, options)</dfn> method reads |source| to completion and discards everything it reads.
+
+<ol>
+<li>Let |normalized| be the result of {{Stream/from()}} with |source|.
+<li>Let |signal| be |options|["{{ConsumeOptions/signal}}"] if present.
+<li>Let |limit| be |options|["{{ConsumeOptions/limit}}"] if present.
+<li>If |signal| is present and [=AbortSignal/aborted=], return [=a promise rejected with=] its abort reason.
+<li>Let |totalBytes| be 0.
+<li>Asynchronously iterate |normalized|. Before each iteration step, if |signal| is present and [=AbortSignal/aborted=], stop iteration and reject with |signal|'s abort reason. If |limit| is present, then for each batch yielded, for each chunk, add its byte length to |totalBytes|, and if |totalBytes| exceeds |limit|, throw a {{RangeError}}. Discard each batch without retaining it.
+<li>Return undefined.
+</ol>
+</div>
+
+Note: Unlike the other consumers, {{Stream/dump()}} retains no data. Its peak memory is one batch regardless of how much the source yields, so it is the appropriate way to read a stream whose contents are not wanted. Callers that need the data should use {{Stream/bytes()}} or {{Stream/array()}} instead.
+
+Note: Reading a source to completion is what releases its [=backpressure policy=] budget, and for some sources also releases resources held on the producer's behalf. A source whose payload is unwanted therefore still needs to be read rather than abandoned, which is the case {{Stream/dump()}} exists to serve. Where the source should instead be cancelled without being read, callers should terminate iteration early or cancel the source directly.
+
+Note: When |limit| is absent, no byte accounting is performed. Implementations are not required to inspect chunk byte lengths in that case.
+
+Terminating for any reason other than normal completion, such as an error from the source, an abort via |signal|, or exceeding |limit|, is an abrupt completion, so the iterator's `return()` method is invoked and the source is released. {{Stream/dump()}} never reports a partial read as success.
+
+The <dfn method for="Stream">dumpSync(source, options)</dfn> method performs the same algorithm synchronously using {{Stream/fromSync()}} for normalization, and returns undefined.
 
 
 Utilities {#utilities}

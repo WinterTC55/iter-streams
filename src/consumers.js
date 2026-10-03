@@ -67,10 +67,12 @@ exports.bytesSync = bytesSync;
 exports.textSync = textSync;
 exports.arrayBufferSync = arrayBufferSync;
 exports.arraySync = arraySync;
+exports.dumpSync = dumpSync;
 exports.bytes = bytes;
 exports.text = text;
 exports.arrayBuffer = arrayBuffer;
 exports.array = array;
+exports.dump = dump;
 exports.tap = tap;
 exports.tapSync = tapSync;
 exports.ondrain = ondrain;
@@ -176,6 +178,34 @@ function arraySync(source, options) {
     }
     return chunks;
 }
+/**
+ * Read a sync source to completion, discarding everything it yields.
+ *
+ * Unlike the other consumers, nothing is retained: peak memory is one batch
+ * regardless of how much the source produces. Reading is also what releases a
+ * source's backpressure budget, so a source whose payload is not wanted still
+ * needs to be read rather than abandoned.
+ *
+ * @param source - Sync iterable yielding Uint8Array[] batches
+ * @param options - Optional limit
+ */
+function dumpSync(source, options) {
+    var limit = options === null || options === void 0 ? void 0 : options.limit;
+    var totalBytes = 0;
+    for (var _i = 0, source_3 = source; _i < source_3.length; _i++) {
+        var batch = source_3[_i];
+        // Fast path: with no limit there is no reason to look at the chunks at all.
+        if (limit === undefined)
+            continue;
+        for (var _a = 0, batch_3 = batch; _a < batch_3.length; _a++) {
+            var chunk = batch_3[_a];
+            totalBytes += chunk.byteLength;
+            if (totalBytes > limit) {
+                throw new RangeError("Stream exceeded byte limit of ".concat(limit));
+            }
+        }
+    }
+}
 // =============================================================================
 // Async Consumers
 // =============================================================================
@@ -188,8 +218,8 @@ function arraySync(source, options) {
  */
 function bytes(source, options) {
     return __awaiter(this, void 0, void 0, function () {
-        var signal, limit, chunks, batch, _i, batch_3, chunk, e_1_1, _a, source_3, batch, _b, batch_4, chunk, totalBytes, batch, _c, batch_5, chunk, e_2_1, _d, source_4, batch, _e, batch_6, chunk;
-        var _f, source_5, source_5_1, _g, source_6, source_6_1;
+        var signal, limit, chunks, batch, _i, batch_4, chunk, e_1_1, _a, source_4, batch, _b, batch_5, chunk, totalBytes, batch, _c, batch_6, chunk, e_2_1, _d, source_5, batch, _e, batch_7, chunk;
+        var _f, source_6, source_6_1, _g, source_7, source_7_1;
         var _h, e_1, _j, _k, _l, e_2, _m, _o;
         var _p, _q, _r;
         return __generator(this, function (_s) {
@@ -207,16 +237,16 @@ function bytes(source, options) {
                     _s.label = 1;
                 case 1:
                     _s.trys.push([1, 6, 7, 12]);
-                    _f = true, source_5 = __asyncValues(source);
+                    _f = true, source_6 = __asyncValues(source);
                     _s.label = 2;
-                case 2: return [4 /*yield*/, source_5.next()];
+                case 2: return [4 /*yield*/, source_6.next()];
                 case 3:
-                    if (!(source_5_1 = _s.sent(), _h = source_5_1.done, !_h)) return [3 /*break*/, 5];
-                    _k = source_5_1.value;
+                    if (!(source_6_1 = _s.sent(), _h = source_6_1.done, !_h)) return [3 /*break*/, 5];
+                    _k = source_6_1.value;
                     _f = false;
                     batch = _k;
-                    for (_i = 0, batch_3 = batch; _i < batch_3.length; _i++) {
-                        chunk = batch_3[_i];
+                    for (_i = 0, batch_4 = batch; _i < batch_4.length; _i++) {
+                        chunk = batch_4[_i];
                         chunks.push(chunk);
                     }
                     _s.label = 4;
@@ -230,8 +260,8 @@ function bytes(source, options) {
                     return [3 /*break*/, 12];
                 case 7:
                     _s.trys.push([7, , 10, 11]);
-                    if (!(!_f && !_h && (_j = source_5.return))) return [3 /*break*/, 9];
-                    return [4 /*yield*/, _j.call(source_5)];
+                    if (!(!_f && !_h && (_j = source_6.return))) return [3 /*break*/, 9];
+                    return [4 /*yield*/, _j.call(source_6)];
                 case 8:
                     _s.sent();
                     _s.label = 9;
@@ -243,10 +273,10 @@ function bytes(source, options) {
                 case 12: return [3 /*break*/, 14];
                 case 13:
                     if ((0, from_js_1.isSyncIterable)(source)) {
-                        for (_a = 0, source_3 = source; _a < source_3.length; _a++) {
-                            batch = source_3[_a];
-                            for (_b = 0, batch_4 = batch; _b < batch_4.length; _b++) {
-                                chunk = batch_4[_b];
+                        for (_a = 0, source_4 = source; _a < source_4.length; _a++) {
+                            batch = source_4[_a];
+                            for (_b = 0, batch_5 = batch; _b < batch_5.length; _b++) {
+                                chunk = batch_5[_b];
                                 chunks.push(chunk);
                             }
                         }
@@ -262,20 +292,20 @@ function bytes(source, options) {
                     _s.label = 16;
                 case 16:
                     _s.trys.push([16, 21, 22, 27]);
-                    _g = true, source_6 = __asyncValues(source);
+                    _g = true, source_7 = __asyncValues(source);
                     _s.label = 17;
-                case 17: return [4 /*yield*/, source_6.next()];
+                case 17: return [4 /*yield*/, source_7.next()];
                 case 18:
-                    if (!(source_6_1 = _s.sent(), _l = source_6_1.done, !_l)) return [3 /*break*/, 20];
-                    _o = source_6_1.value;
+                    if (!(source_7_1 = _s.sent(), _l = source_7_1.done, !_l)) return [3 /*break*/, 20];
+                    _o = source_7_1.value;
                     _g = false;
                     batch = _o;
                     // Check for abort on each iteration
                     if (signal === null || signal === void 0 ? void 0 : signal.aborted) {
                         throw (_q = signal.reason) !== null && _q !== void 0 ? _q : new DOMException('Aborted', 'AbortError');
                     }
-                    for (_c = 0, batch_5 = batch; _c < batch_5.length; _c++) {
-                        chunk = batch_5[_c];
+                    for (_c = 0, batch_6 = batch; _c < batch_6.length; _c++) {
+                        chunk = batch_6[_c];
                         if (limit !== undefined) {
                             totalBytes += chunk.byteLength;
                             if (totalBytes > limit) {
@@ -295,8 +325,8 @@ function bytes(source, options) {
                     return [3 /*break*/, 27];
                 case 22:
                     _s.trys.push([22, , 25, 26]);
-                    if (!(!_g && !_l && (_m = source_6.return))) return [3 /*break*/, 24];
-                    return [4 /*yield*/, _m.call(source_6)];
+                    if (!(!_g && !_l && (_m = source_7.return))) return [3 /*break*/, 24];
+                    return [4 /*yield*/, _m.call(source_7)];
                 case 23:
                     _s.sent();
                     _s.label = 24;
@@ -308,14 +338,14 @@ function bytes(source, options) {
                 case 27: return [3 /*break*/, 29];
                 case 28:
                     if ((0, from_js_1.isSyncIterable)(source)) {
-                        for (_d = 0, source_4 = source; _d < source_4.length; _d++) {
-                            batch = source_4[_d];
+                        for (_d = 0, source_5 = source; _d < source_5.length; _d++) {
+                            batch = source_5[_d];
                             // Check for abort on each iteration
                             if (signal === null || signal === void 0 ? void 0 : signal.aborted) {
                                 throw (_r = signal.reason) !== null && _r !== void 0 ? _r : new DOMException('Aborted', 'AbortError');
                             }
-                            for (_e = 0, batch_6 = batch; _e < batch_6.length; _e++) {
-                                chunk = batch_6[_e];
+                            for (_e = 0, batch_7 = batch; _e < batch_7.length; _e++) {
+                                chunk = batch_7[_e];
                                 if (limit !== undefined) {
                                     totalBytes += chunk.byteLength;
                                     if (totalBytes > limit) {
@@ -393,8 +423,8 @@ function arrayBuffer(source, options) {
  */
 function array(source, options) {
     return __awaiter(this, void 0, void 0, function () {
-        var signal, limit, chunks, batch, _i, batch_7, chunk, e_3_1, _a, source_7, batch, _b, batch_8, chunk, totalBytes, batch, _c, batch_9, chunk, e_4_1, _d, source_8, batch, _e, batch_10, chunk;
-        var _f, source_9, source_9_1, _g, source_10, source_10_1;
+        var signal, limit, chunks, batch, _i, batch_8, chunk, e_3_1, _a, source_8, batch, _b, batch_9, chunk, totalBytes, batch, _c, batch_10, chunk, e_4_1, _d, source_9, batch, _e, batch_11, chunk;
+        var _f, source_10, source_10_1, _g, source_11, source_11_1;
         var _h, e_3, _j, _k, _l, e_4, _m, _o;
         var _p, _q, _r;
         return __generator(this, function (_s) {
@@ -412,16 +442,16 @@ function array(source, options) {
                     _s.label = 1;
                 case 1:
                     _s.trys.push([1, 6, 7, 12]);
-                    _f = true, source_9 = __asyncValues(source);
+                    _f = true, source_10 = __asyncValues(source);
                     _s.label = 2;
-                case 2: return [4 /*yield*/, source_9.next()];
+                case 2: return [4 /*yield*/, source_10.next()];
                 case 3:
-                    if (!(source_9_1 = _s.sent(), _h = source_9_1.done, !_h)) return [3 /*break*/, 5];
-                    _k = source_9_1.value;
+                    if (!(source_10_1 = _s.sent(), _h = source_10_1.done, !_h)) return [3 /*break*/, 5];
+                    _k = source_10_1.value;
                     _f = false;
                     batch = _k;
-                    for (_i = 0, batch_7 = batch; _i < batch_7.length; _i++) {
-                        chunk = batch_7[_i];
+                    for (_i = 0, batch_8 = batch; _i < batch_8.length; _i++) {
+                        chunk = batch_8[_i];
                         chunks.push(chunk);
                     }
                     _s.label = 4;
@@ -435,8 +465,8 @@ function array(source, options) {
                     return [3 /*break*/, 12];
                 case 7:
                     _s.trys.push([7, , 10, 11]);
-                    if (!(!_f && !_h && (_j = source_9.return))) return [3 /*break*/, 9];
-                    return [4 /*yield*/, _j.call(source_9)];
+                    if (!(!_f && !_h && (_j = source_10.return))) return [3 /*break*/, 9];
+                    return [4 /*yield*/, _j.call(source_10)];
                 case 8:
                     _s.sent();
                     _s.label = 9;
@@ -448,10 +478,10 @@ function array(source, options) {
                 case 12: return [3 /*break*/, 14];
                 case 13:
                     if ((0, from_js_1.isSyncIterable)(source)) {
-                        for (_a = 0, source_7 = source; _a < source_7.length; _a++) {
-                            batch = source_7[_a];
-                            for (_b = 0, batch_8 = batch; _b < batch_8.length; _b++) {
-                                chunk = batch_8[_b];
+                        for (_a = 0, source_8 = source; _a < source_8.length; _a++) {
+                            batch = source_8[_a];
+                            for (_b = 0, batch_9 = batch; _b < batch_9.length; _b++) {
+                                chunk = batch_9[_b];
                                 chunks.push(chunk);
                             }
                         }
@@ -467,20 +497,20 @@ function array(source, options) {
                     _s.label = 16;
                 case 16:
                     _s.trys.push([16, 21, 22, 27]);
-                    _g = true, source_10 = __asyncValues(source);
+                    _g = true, source_11 = __asyncValues(source);
                     _s.label = 17;
-                case 17: return [4 /*yield*/, source_10.next()];
+                case 17: return [4 /*yield*/, source_11.next()];
                 case 18:
-                    if (!(source_10_1 = _s.sent(), _l = source_10_1.done, !_l)) return [3 /*break*/, 20];
-                    _o = source_10_1.value;
+                    if (!(source_11_1 = _s.sent(), _l = source_11_1.done, !_l)) return [3 /*break*/, 20];
+                    _o = source_11_1.value;
                     _g = false;
                     batch = _o;
                     // Check for abort on each iteration
                     if (signal === null || signal === void 0 ? void 0 : signal.aborted) {
                         throw (_q = signal.reason) !== null && _q !== void 0 ? _q : new DOMException('Aborted', 'AbortError');
                     }
-                    for (_c = 0, batch_9 = batch; _c < batch_9.length; _c++) {
-                        chunk = batch_9[_c];
+                    for (_c = 0, batch_10 = batch; _c < batch_10.length; _c++) {
+                        chunk = batch_10[_c];
                         if (limit !== undefined) {
                             totalBytes += chunk.byteLength;
                             if (totalBytes > limit) {
@@ -500,8 +530,8 @@ function array(source, options) {
                     return [3 /*break*/, 27];
                 case 22:
                     _s.trys.push([22, , 25, 26]);
-                    if (!(!_g && !_l && (_m = source_10.return))) return [3 /*break*/, 24];
-                    return [4 /*yield*/, _m.call(source_10)];
+                    if (!(!_g && !_l && (_m = source_11.return))) return [3 /*break*/, 24];
+                    return [4 /*yield*/, _m.call(source_11)];
                 case 23:
                     _s.sent();
                     _s.label = 24;
@@ -513,14 +543,14 @@ function array(source, options) {
                 case 27: return [3 /*break*/, 29];
                 case 28:
                     if ((0, from_js_1.isSyncIterable)(source)) {
-                        for (_d = 0, source_8 = source; _d < source_8.length; _d++) {
-                            batch = source_8[_d];
+                        for (_d = 0, source_9 = source; _d < source_9.length; _d++) {
+                            batch = source_9[_d];
                             // Check for abort on each iteration
                             if (signal === null || signal === void 0 ? void 0 : signal.aborted) {
                                 throw (_r = signal.reason) !== null && _r !== void 0 ? _r : new DOMException('Aborted', 'AbortError');
                             }
-                            for (_e = 0, batch_10 = batch; _e < batch_10.length; _e++) {
-                                chunk = batch_10[_e];
+                            for (_e = 0, batch_11 = batch; _e < batch_11.length; _e++) {
+                                chunk = batch_11[_e];
                                 if (limit !== undefined) {
                                     totalBytes += chunk.byteLength;
                                     if (totalBytes > limit) {
@@ -536,6 +566,115 @@ function array(source, options) {
                     }
                     _s.label = 29;
                 case 29: return [2 /*return*/, chunks];
+            }
+        });
+    });
+}
+/**
+ * Read an async or sync source to completion, discarding everything it yields.
+ *
+ * Unlike the other consumers, nothing is retained: peak memory is one batch
+ * regardless of how much the source produces. Reading is also what releases a
+ * source's backpressure budget, and for some sources what releases resources
+ * held on the producer's behalf, so a source whose payload is not wanted still
+ * needs to be read rather than abandoned. bytes() achieves the same thing but
+ * allocates the entire payload in order to throw it away.
+ *
+ * Ending for any reason other than normal completion - a source error, an
+ * abort, or exceeding the limit - rejects. A partial read is never reported as
+ * success.
+ *
+ * @param source - Iterable or async iterable yielding Uint8Array[] batches
+ * @param options - Optional signal and limit
+ * @returns Promise resolving to undefined
+ */
+function dump(source, options) {
+    return __awaiter(this, void 0, void 0, function () {
+        var signal, limit, totalBytes, batch, _i, batch_12, chunk, e_5_1, _a, source_12, batch, _b, batch_13, chunk;
+        var _c, source_13, source_13_1;
+        var _d, e_5, _e, _f;
+        var _g, _h, _j;
+        return __generator(this, function (_k) {
+            switch (_k.label) {
+                case 0:
+                    signal = options === null || options === void 0 ? void 0 : options.signal;
+                    limit = options === null || options === void 0 ? void 0 : options.limit;
+                    // Check for abort
+                    if (signal === null || signal === void 0 ? void 0 : signal.aborted) {
+                        throw (_g = signal.reason) !== null && _g !== void 0 ? _g : new DOMException('Aborted', 'AbortError');
+                    }
+                    totalBytes = 0;
+                    if (!(0, from_js_1.isAsyncIterable)(source)) return [3 /*break*/, 13];
+                    _k.label = 1;
+                case 1:
+                    _k.trys.push([1, 6, 7, 12]);
+                    _c = true, source_13 = __asyncValues(source);
+                    _k.label = 2;
+                case 2: return [4 /*yield*/, source_13.next()];
+                case 3:
+                    if (!(source_13_1 = _k.sent(), _d = source_13_1.done, !_d)) return [3 /*break*/, 5];
+                    _f = source_13_1.value;
+                    _c = false;
+                    batch = _f;
+                    // Check for abort on each iteration
+                    if (signal === null || signal === void 0 ? void 0 : signal.aborted) {
+                        throw (_h = signal.reason) !== null && _h !== void 0 ? _h : new DOMException('Aborted', 'AbortError');
+                    }
+                    if (limit === undefined)
+                        return [3 /*break*/, 4];
+                    for (_i = 0, batch_12 = batch; _i < batch_12.length; _i++) {
+                        chunk = batch_12[_i];
+                        totalBytes += chunk.byteLength;
+                        if (totalBytes > limit) {
+                            throw new RangeError("Stream exceeded byte limit of ".concat(limit));
+                        }
+                    }
+                    _k.label = 4;
+                case 4:
+                    _c = true;
+                    return [3 /*break*/, 2];
+                case 5: return [3 /*break*/, 12];
+                case 6:
+                    e_5_1 = _k.sent();
+                    e_5 = { error: e_5_1 };
+                    return [3 /*break*/, 12];
+                case 7:
+                    _k.trys.push([7, , 10, 11]);
+                    if (!(!_c && !_d && (_e = source_13.return))) return [3 /*break*/, 9];
+                    return [4 /*yield*/, _e.call(source_13)];
+                case 8:
+                    _k.sent();
+                    _k.label = 9;
+                case 9: return [3 /*break*/, 11];
+                case 10:
+                    if (e_5) throw e_5.error;
+                    return [7 /*endfinally*/];
+                case 11: return [7 /*endfinally*/];
+                case 12: return [3 /*break*/, 14];
+                case 13:
+                    if ((0, from_js_1.isSyncIterable)(source)) {
+                        for (_a = 0, source_12 = source; _a < source_12.length; _a++) {
+                            batch = source_12[_a];
+                            // Check for abort on each iteration
+                            if (signal === null || signal === void 0 ? void 0 : signal.aborted) {
+                                throw (_j = signal.reason) !== null && _j !== void 0 ? _j : new DOMException('Aborted', 'AbortError');
+                            }
+                            if (limit === undefined)
+                                continue;
+                            for (_b = 0, batch_13 = batch; _b < batch_13.length; _b++) {
+                                chunk = batch_13[_b];
+                                totalBytes += chunk.byteLength;
+                                if (totalBytes > limit) {
+                                    throw new RangeError("Stream exceeded byte limit of ".concat(limit));
+                                }
+                            }
+                        }
+                    }
+                    else {
+                        throw new TypeError('Source must be iterable');
+                    }
+                    _k.label = 14;
+                case 14: return [2 /*return*/];
             }
         });
     });
@@ -667,9 +806,9 @@ function merge() {
     return _a = {},
         _a[Symbol.asyncIterator] = function () {
             return __asyncGenerator(this, arguments, function _a() {
-                var signal, _b, _c, _d, batch, e_5_1, states, startIterator, pending, _e, index, result, returnPromises;
+                var signal, _b, _c, _d, batch, e_6_1, states, startIterator, pending, _e, index, result, returnPromises;
                 var _this = this;
-                var _f, e_5, _g, _h;
+                var _f, e_6, _g, _h;
                 var _j, _k, _l;
                 return __generator(this, function (_m) {
                     switch (_m.label) {
@@ -708,8 +847,8 @@ function merge() {
                             return [3 /*break*/, 4];
                         case 9: return [3 /*break*/, 16];
                         case 10:
-                            e_5_1 = _m.sent();
-                            e_5 = { error: e_5_1 };
+                            e_6_1 = _m.sent();
+                            e_6 = { error: e_6_1 };
                             return [3 /*break*/, 16];
                         case 11:
                             _m.trys.push([11, , 14, 15]);
@@ -720,7 +859,7 @@ function merge() {
                             _m.label = 13;
                         case 13: return [3 /*break*/, 15];
                         case 14:
-                            if (e_5) throw e_5.error;
+                            if (e_6) throw e_6.error;
                             return [7 /*endfinally*/];
                         case 15: return [7 /*endfinally*/];
                         case 16: return [4 /*yield*/, __await(void 0)];

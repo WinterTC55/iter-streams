@@ -121,6 +121,8 @@ import {
   arrayBufferSync,
   array,
   arraySync,
+  dump,
+  dumpSync,
   tap,
   tapSync,
   merge,
@@ -177,12 +179,14 @@ export const Stream = {
   text,
   arrayBuffer,
   array,
+  dump,
 
   // Consumers (sync)
   bytesSync,
   textSync,
   arrayBufferSync,
   arraySync,
+  dumpSync,
 
   // Combining
   merge,

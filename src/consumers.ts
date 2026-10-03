@@ -143,6 +143,36 @@ export function arraySync(
   return chunks;
 }
 
+/**
+ * Read a sync source to completion, discarding everything it yields.
+ *
+ * Unlike the other consumers, nothing is retained: peak memory is one batch
+ * regardless of how much the source produces. Reading is also what releases a
+ * source's backpressure budget, so a source whose payload is not wanted still
+ * needs to be read rather than abandoned.
+ *
+ * @param source - Sync iterable yielding Uint8Array[] batches
+ * @param options - Optional limit
+ */
+export function dumpSync(
+  source: Iterable<Uint8Array[]>,
+  options?: ConsumeSyncOptions
+): undefined {
+  const limit = options?.limit;
+
+  let totalBytes = 0;
+  for (const batch of source) {
+    // Fast path: with no limit there is no reason to look at the chunks at all.
+    if (limit === undefined) continue;
+    for (const chunk of batch) {
+      totalBytes += chunk.byteLength;
+      if (totalBytes > limit) {
+        throw new RangeError(`Stream exceeded byte limit of ${limit}`);
+      }
+    }
+  }
+}
+
 // =============================================================================
 // Async Consumers
 // =============================================================================
@@ -353,6 +383,74 @@ export async function array(
   }
 
   return chunks;
+}
+
+/**
+ * Read an async or sync source to completion, discarding everything it yields.
+ *
+ * Unlike the other consumers, nothing is retained: peak memory is one batch
+ * regardless of how much the source produces. Reading is also what releases a
+ * source's backpressure budget, and for some sources what releases resources
+ * held on the producer's behalf, so a source whose payload is not wanted still
+ * needs to be read rather than abandoned. bytes() achieves the same thing but
+ * allocates the entire payload in order to throw it away.
+ *
+ * Ending for any reason other than normal completion - a source error, an
+ * abort, or exceeding the limit - rejects. A partial read is never reported as
+ * success.
+ *
+ * @param source - Iterable or async iterable yielding Uint8Array[] batches
+ * @param options - Optional signal and limit
+ * @returns Promise resolving to undefined
+ */
+export async function dump(
+  source: AsyncIterable<Uint8Array[]> | Iterable<Uint8Array[]>,
+  options?: ConsumeOptions
+): Promise<undefined> {
+  const signal = options?.signal;
+  const limit = options?.limit;
+
+  // Check for abort
+  if (signal?.aborted) {
+    throw signal.reason ?? new DOMException('Aborted', 'AbortError');
+  }
+
+  let totalBytes = 0;
+  if (isAsyncIterable(source)) {
+    for await (const batch of source) {
+      // Check for abort on each iteration
+      if (signal?.aborted) {
+        throw signal.reason ?? new DOMException('Aborted', 'AbortError');
+      }
+
+      if (limit === undefined) continue;
+
+      for (const chunk of batch) {
+        totalBytes += chunk.byteLength;
+        if (totalBytes > limit) {
+          throw new RangeError(`Stream exceeded byte limit of ${limit}`);
+        }
+      }
+    }
+  } else if (isSyncIterable(source)) {
+    for (const batch of source) {
+      // Check for abort on each iteration
+      if (signal?.aborted) {
+        throw signal.reason ?? new DOMException('Aborted', 'AbortError');
+      }
+
+      if (limit === undefined) continue;
+
+      for (const chunk of batch) {
+        totalBytes += chunk.byteLength;
+        if (totalBytes > limit) {
+          throw new RangeError(`Stream exceeded byte limit of ${limit}`);
+        }
+      }
+    }
+  } else {
+    throw new TypeError('Source must be iterable');
+  }
 }
 
 // =============================================================================
