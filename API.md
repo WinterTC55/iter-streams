@@ -1069,15 +1069,15 @@ Two patterns for sharing a single source among multiple consumers:
 ### `Stream.broadcast(options?)`
 
 Create a push-model multi-consumer channel. Data written to the [writer](#writer-interface) is
-delivered to all consumers that have subscribed via `broadcast.push()`.
+delivered to all consumers that have subscribed via `channel.push()`.
 Data remains in the buffer and is available to consumers that attach before
 it is overwritten. Late-joining consumers begin reading from the oldest entry
-still in the buffer at the time they call `broadcast.push()`.
+still in the buffer at the time they call `channel.push()`.
 
 ```typescript
 function broadcast(options?: BroadcastOptions): {
   writer: Writer;
-  broadcast: Broadcast;
+  channel: Broadcast;
 }
 ```
 
@@ -1103,11 +1103,11 @@ interface Broadcast {
 
 **Example:**
 ```typescript
-const { writer, broadcast } = Stream.broadcast({ highWaterMark: 100 });
+const { writer, channel } = Stream.broadcast({ highWaterMark: 100 });
 
 // Create consumers before writing
-const consumer1 = broadcast.push();
-const consumer2 = broadcast.push(decompress);
+const consumer1 = channel.push();
+const consumer2 = channel.push(decompress);
 
 // Producer and consumers must run concurrently. Awaited writes
 // block when the buffer fills until consumers read.

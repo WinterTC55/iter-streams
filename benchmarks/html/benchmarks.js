@@ -208,9 +208,9 @@ export async function webStreamText(chunks) {
 // =============================================================================
 
 export async function newStreamBroadcast2(Stream, chunks) {
-  const { writer, broadcast } = Stream.broadcast({ highWaterMark: 1000 });
-  const c1 = broadcast.push();
-  const c2 = broadcast.push();
+  const { writer, channel } = Stream.broadcast({ highWaterMark: 1000 });
+  const c1 = channel.push();
+  const c2 = channel.push();
   (async () => {
     for (const chunk of chunks) await writer.write(chunk);
     await writer.end();

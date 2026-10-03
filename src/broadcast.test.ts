@@ -27,8 +27,8 @@ async function collect(source: AsyncIterable<Uint8Array[]>): Promise<Uint8Array[
 
 describe('broadcast()', () => {
   describe('basic usage', () => {
-    it('should create writer and broadcast pair [BCAST-001]', () => {
-      const { writer, broadcast: bc } = broadcast();
+    it('should create writer and channel pair [BCAST-001]', () => {
+      const { writer, channel: bc } = broadcast();
       assert.ok(writer);
       assert.ok(bc);
       assert.strictEqual(bc.consumerCount, 0);
@@ -36,7 +36,7 @@ describe('broadcast()', () => {
     });
 
     it('should allow single consumer to receive data [BCAST-002]', async () => {
-      const { writer, broadcast: bc } = broadcast();
+      const { writer, channel: bc } = broadcast();
       const consumer = bc.push();
 
       // Write in background
@@ -55,7 +55,7 @@ describe('broadcast()', () => {
     });
 
     it('should allow multiple consumers to receive same data [BCAST-003]', async () => {
-      const { writer, broadcast: bc } = broadcast({ highWaterMark: 100 });
+      const { writer, channel: bc } = broadcast({ highWaterMark: 100 });
 
       const consumer1 = bc.push();
       const consumer2 = bc.push();
@@ -80,7 +80,7 @@ describe('broadcast()', () => {
     });
 
     it('should track consumer count [BCAST-004]', async () => {
-      const { writer, broadcast: bc } = broadcast({ highWaterMark: 100 });
+      const { writer, channel: bc } = broadcast({ highWaterMark: 100 });
 
       assert.strictEqual(bc.consumerCount, 0);
 
@@ -103,7 +103,7 @@ describe('broadcast()', () => {
 
   describe('buffer management', () => {
     it('should respect buffer limit [BCAST-010]', () => {
-      const { writer, broadcast: bc } = broadcast({ highWaterMark: 2 });
+      const { writer, channel: bc } = broadcast({ highWaterMark: 2 });
 
       assert.strictEqual(writer.writeSync('chunk1'), true);
       assert.strictEqual(writer.writeSync('chunk2'), true);
@@ -114,7 +114,7 @@ describe('broadcast()', () => {
     });
 
     it('should trim buffer as consumers advance [BCAST-011]', async () => {
-      const { writer, broadcast: bc } = broadcast({ highWaterMark: 100 });
+      const { writer, channel: bc } = broadcast({ highWaterMark: 100 });
 
       const consumer = bc.push();
       const iter = consumer[Symbol.asyncIterator]();
@@ -135,7 +135,7 @@ describe('broadcast()', () => {
     });
 
     it('should use drop-oldest policy [BCAST-012]', () => {
-      const { writer, broadcast: bc } = broadcast({
+      const { writer, channel: bc } = broadcast({
         highWaterMark: 2,
         backpressure: 'drop-oldest',
       });
@@ -148,7 +148,7 @@ describe('broadcast()', () => {
     });
 
     it('should use drop-newest policy [BCAST-013]', () => {
-      const { writer, broadcast: bc } = broadcast({
+      const { writer, channel: bc } = broadcast({
         highWaterMark: 2,
         backpressure: 'drop-newest',
       });
@@ -174,7 +174,7 @@ describe('broadcast()', () => {
     });
 
     it('should support writev [BCAST-021]', async () => {
-      const { writer, broadcast: bc } = broadcast();
+      const { writer, channel: bc } = broadcast();
       const consumer = bc.push();
 
       await writer.writev(['part1', 'part2', 'part3']);
@@ -186,7 +186,7 @@ describe('broadcast()', () => {
     });
 
     it('should propagate errors via fail [BCAST-022]', async () => {
-      const { writer, broadcast: bc } = broadcast();
+      const { writer, channel: bc } = broadcast();
       const consumer = bc.push();
 
       const error = new Error('Test error');
@@ -200,7 +200,7 @@ describe('broadcast()', () => {
 
   describe('cancel()', () => {
     it('should cancel all consumers without error [BCAST-030]', async () => {
-      const { writer, broadcast: bc } = broadcast();
+      const { writer, channel: bc } = broadcast();
       const consumer = bc.push();
 
       bc.cancel();
@@ -210,7 +210,7 @@ describe('broadcast()', () => {
     });
 
     it('should cancel all consumers with error [BCAST-031]', async () => {
-      const { writer, broadcast: bc } = broadcast();
+      const { writer, channel: bc } = broadcast();
       const consumer = bc.push();
 
       // Start iteration before cancelling
@@ -225,7 +225,7 @@ describe('broadcast()', () => {
     });
 
     it('should be idempotent [BCAST-032]', () => {
-      const { broadcast: bc } = broadcast();
+      const { channel: bc } = broadcast();
       bc.cancel();
       bc.cancel(); // Should not throw
       bc.cancel(new Error('test')); // Should not throw
@@ -234,7 +234,7 @@ describe('broadcast()', () => {
 
   describe('Symbol.dispose', () => {
     it('should cancel on dispose [BCAST-040]', async () => {
-      const { broadcast: bc } = broadcast();
+      const { channel: bc } = broadcast();
       const consumer = bc.push();
 
       bc[Symbol.dispose]();
@@ -249,7 +249,7 @@ describe('broadcast()', () => {
       const controller = new AbortController();
       controller.abort();
 
-      const { broadcast: bc } = broadcast({ signal: controller.signal });
+      const { channel: bc } = broadcast({ signal: controller.signal });
       const consumer = bc.push();
 
       const chunks = await collect(consumer);
@@ -258,7 +258,7 @@ describe('broadcast()', () => {
 
     it('should cancel on signal abort [BCAST-051]', async () => {
       const controller = new AbortController();
-      const { writer, broadcast: bc } = broadcast({ signal: controller.signal });
+      const { writer, channel: bc } = broadcast({ signal: controller.signal });
       const consumer = bc.push();
 
       writer.writeSync('chunk1');
@@ -274,7 +274,7 @@ describe('broadcast()', () => {
 
   describe('late subscribers', () => {
     it('should allow late subscribers to receive new data [BCAST-005]', async () => {
-      const { writer, broadcast: bc } = broadcast({ highWaterMark: 100 });
+      const { writer, channel: bc } = broadcast({ highWaterMark: 100 });
 
       // Write before any subscribers
       writer.writeSync('chunk1');
@@ -297,7 +297,7 @@ describe('broadcast()', () => {
 describe('Broadcast.from()', () => {
   it('should create broadcast from async iterable [BCAST-060]', async () => {
     const source = from(['chunk1', 'chunk2']);
-    const { broadcast: bc } = Broadcast.from(source);
+    const { channel: bc } = Broadcast.from(source);
 
     const consumer = bc.push();
     
@@ -310,7 +310,7 @@ describe('Broadcast.from()', () => {
 
   it('should create broadcast from sync iterable [BCAST-061]', async () => {
     const source = fromSync(['chunk1', 'chunk2']);
-    const { broadcast: bc } = Broadcast.from(source);
+    const { channel: bc } = Broadcast.from(source);
 
     const consumer = bc.push();
     
@@ -342,7 +342,7 @@ describe('broadcast() with transforms', () => {
   };
 
   it('should apply single transform to consumer [BCAST-070]', async () => {
-    const { writer, broadcast: bc } = broadcast({ highWaterMark: 100 });
+    const { writer, channel: bc } = broadcast({ highWaterMark: 100 });
 
     const consumer = bc.push(uppercase);
 
@@ -359,7 +359,7 @@ describe('broadcast() with transforms', () => {
   });
 
   it('should apply multiple transforms in order [BCAST-071]', async () => {
-    const { writer, broadcast: bc } = broadcast({ highWaterMark: 100 });
+    const { writer, channel: bc } = broadcast({ highWaterMark: 100 });
 
     const consumer = bc.push(uppercase, prefix);
 
@@ -373,7 +373,7 @@ describe('broadcast() with transforms', () => {
   });
 
   it('should allow different transforms per consumer [BCAST-072]', async () => {
-    const { writer, broadcast: bc } = broadcast({ highWaterMark: 100 });
+    const { writer, channel: bc } = broadcast({ highWaterMark: 100 });
 
     const consumer1 = bc.push(uppercase);
     const consumer2 = bc.push(prefix);
@@ -440,7 +440,7 @@ describe('broadcast writer drainable protocol', () => {
 
   // BCAST-084: ondrain returns pending Promise when desiredSize === 0
   it('should return pending Promise when desiredSize === 0 [BCAST-084]', async () => {
-    const { writer, broadcast: bc } = broadcast({ highWaterMark: 1 });
+    const { writer, channel: bc } = broadcast({ highWaterMark: 1 });
     
     // Create a consumer to read data
     const consumer = bc.push();
@@ -512,7 +512,7 @@ describe('broadcast writer drainable protocol', () => {
 
   // BCAST-087: Multiple drain waiters all resolve together
   it('should resolve multiple drain waiters together [BCAST-087]', async () => {
-    const { writer, broadcast: bc } = broadcast({ highWaterMark: 1 });
+    const { writer, channel: bc } = broadcast({ highWaterMark: 1 });
     
     // Create a consumer to read data
     const consumer = bc.push();
@@ -547,7 +547,7 @@ describe('broadcast writer drainable protocol', () => {
 
 describe('broadcast write signal cancellation', () => {
   it('should reject blocked write when signal fires [BCAST-090]', async () => {
-    const { writer, broadcast: bc } = broadcast({ highWaterMark: 1 });
+    const { writer, channel: bc } = broadcast({ highWaterMark: 1 });
 
     // Create a consumer so writes go through
     const consumer = bc.push();
@@ -586,7 +586,7 @@ describe('broadcast write signal cancellation', () => {
   });
 
   it('should clean up signal listener on normal write completion [BCAST-092]', async () => {
-    const { writer, broadcast: bc } = broadcast({ highWaterMark: 1 });
+    const { writer, channel: bc } = broadcast({ highWaterMark: 1 });
     const consumer = bc.push();
     const iter = consumer[Symbol.asyncIterator]();
 
@@ -621,7 +621,7 @@ describe('Broadcast.from() cancel bug fix', () => {
     })());
 
     const controller = new AbortController();
-    const { broadcast: bc } = Broadcast.from(source, {
+    const { channel: bc } = Broadcast.from(source, {
       highWaterMark: 1,
       signal: controller.signal,
     });
@@ -691,7 +691,7 @@ describe('Broadcast.from() cancel bug fix', () => {
     })());
 
     const controller = new AbortController();
-    const { broadcast: bc } = Broadcast.from(source, {
+    const { channel: bc } = Broadcast.from(source, {
       highWaterMark: 100, // Large buffer so writes don't block
       signal: controller.signal,
     });
@@ -713,7 +713,7 @@ describe('Broadcast.from() cancel bug fix', () => {
 
 describe('broadcast _abort consumer cleanup', () => {
   it('should detach consumers and clear the set on fail [BCAST-110]', async () => {
-    const { writer, broadcast: bc } = broadcast({ highWaterMark: 100 });
+    const { writer, channel: bc } = broadcast({ highWaterMark: 100 });
 
     const consumer1 = bc.push();
     const consumer2 = bc.push();
@@ -731,7 +731,7 @@ describe('broadcast _abort consumer cleanup', () => {
   });
 
   it('should detach consumers even without pending reads [BCAST-111]', async () => {
-    const { writer, broadcast: bc } = broadcast({ highWaterMark: 100 });
+    const { writer, channel: bc } = broadcast({ highWaterMark: 100 });
 
     // Create consumers but don't start reading — no pending reads
     bc.push();

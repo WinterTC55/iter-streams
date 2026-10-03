@@ -112,12 +112,12 @@ handled at the source level, not the stream level.
 
 ```typescript
 // Video transcoding pipeline
-const { writer, broadcast } = Stream.broadcast();
+const { writer, channel } = Stream.broadcast();
 
 // Multiple output qualities
-const hd = broadcast.push(transcodeToHD);
-const sd = broadcast.push(transcodeToSD);
-const thumbnail = broadcast.push(extractThumbnails);
+const hd = channel.push(transcodeToHD);
+const sd = channel.push(transcodeToSD);
+const thumbnail = channel.push(extractThumbnails);
 
 // Process all in parallel
 await Promise.all([

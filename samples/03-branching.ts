@@ -19,11 +19,11 @@ async function main() {
 
   // Create a broadcast - writer pushes to all consumers
   {
-    const { writer, broadcast } = Stream.broadcast({ highWaterMark: 100 });
+    const { writer, channel } = Stream.broadcast({ highWaterMark: 100 });
 
     // Create multiple consumers
-    const consumer1 = broadcast.push();
-    const consumer2 = broadcast.push();
+    const consumer1 = channel.push();
+    const consumer2 = channel.push();
 
     // Write data - both consumers will see it
     (async () => {
@@ -43,13 +43,13 @@ async function main() {
 
   // Multiple consumers with different transforms
   {
-    const { writer, broadcast } = Stream.broadcast({ highWaterMark: 100 });
+    const { writer, channel } = Stream.broadcast({ highWaterMark: 100 });
 
     // Consumer without transform
-    const raw = broadcast.push();
+    const raw = channel.push();
 
     // Consumer with transform (transforms are applied lazily when consumer pulls)
-    const transformed = broadcast.push(uppercaseTransform());
+    const transformed = channel.push(uppercaseTransform());
 
     (async () => {
       await writer.write('Hello World');
@@ -155,10 +155,10 @@ async function main() {
       yield 'broadcast data 2';
     }
 
-    const { broadcast } = Broadcast.from(Stream.from(dataSource()));
+    const { channel } = Broadcast.from(Stream.from(dataSource()));
 
-    const consumer1 = broadcast.push();
-    const consumer2 = broadcast.push();
+    const consumer1 = channel.push();
+    const consumer2 = channel.push();
 
     await new Promise(resolve => setTimeout(resolve, 50));
     const results = await Promise.all([
@@ -240,12 +240,12 @@ async function main() {
 
   // Broadcast with 'strict' - uses writeSync to check buffer space
   {
-    const { writer, broadcast } = Stream.broadcast({
+    const { writer, channel } = Stream.broadcast({
       highWaterMark: 3,
       backpressure: 'strict'
     });
 
-    const consumer = broadcast.push();
+    const consumer = channel.push();
 
     console.log("'strict' policy with writeSync:");
 

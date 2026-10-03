@@ -339,9 +339,9 @@ async function main() {
 
   console.log('Running: Broadcast / tee (2 consumers)...');
   const bcastNew = await measureSustained('broadcast 2x (new)', async () => {
-    const { writer, broadcast } = Stream.broadcast({ highWaterMark: 100 });
-    const c1 = broadcast.push();
-    const c2 = broadcast.push();
+    const { writer, channel } = Stream.broadcast({ highWaterMark: 100 });
+    const c1 = channel.push();
+    const c2 = channel.push();
     const producing = (async () => {
       for (const chunk of bcastChunks) await writer.write(chunk);
       await writer.end();

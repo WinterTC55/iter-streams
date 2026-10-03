@@ -90,11 +90,11 @@
     // ========================================
     
     async function newStreamBroadcast2(chunks) {
-      const { writer, broadcast } = Stream.broadcast({ highWaterMark: 1000 });
+      const { writer, channel } = Stream.broadcast({ highWaterMark: 1000 });
       
       // Create 2 consumers
-      const consumer1 = broadcast.push();
-      const consumer2 = broadcast.push();
+      const consumer1 = channel.push();
+      const consumer2 = channel.push();
       
       // Write all chunks
       (async () => {
@@ -114,14 +114,14 @@
     }
     
     async function newStreamBroadcast4(chunks) {
-      const { writer, broadcast } = Stream.broadcast({ highWaterMark: 1000 });
+      const { writer, channel } = Stream.broadcast({ highWaterMark: 1000 });
       
       // Create 4 consumers
       const consumers = [
-        broadcast.push(),
-        broadcast.push(),
-        broadcast.push(),
-        broadcast.push()
+        channel.push(),
+        channel.push(),
+        channel.push(),
+        channel.push()
       ];
       
       // Write all chunks

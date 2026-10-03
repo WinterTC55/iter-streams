@@ -91,7 +91,7 @@ This section identifies which types in the new streams API would implement `[Sym
 | Writer (from `Stream.push()`) | Yes | Single-owner write endpoint; transfer moves write authority |
 | DuplexChannel | Yes | Bundles writer + readable for one endpoint; single unit of ownership |
 | Share consumer (from `share.pull()`) | Yes | Each consumer iterable is single-consumer |
-| Broadcast consumer (from `broadcast.push()`) | Yes | Each consumer iterable is single-consumer |
+| Broadcast consumer (from `channel.push()`) | Yes | Each consumer iterable is single-consumer |
 | Share instance | Possible | Multi-consumer wrapper owns the source; transfer moves management authority |
 | Broadcast instance | Possible | Less clear value; the writer side is the primary ownership concern |
 | `WriterIterablePair` (from `Stream.push()`) | Possible | Atomic transfer of both writer and readable together |
@@ -193,7 +193,7 @@ A `DuplexChannel` bundles a writer (sends to the peer) and a readable (receives 
 
 ### 3.4 Share Consumer / Broadcast Consumer
 
-Each call to `share.pull()` or `broadcast.push()` returns an `AsyncIterable<Uint8Array[]>` representing one consumer's view of the shared/broadcast data.
+Each call to `share.pull()` or `channel.push()` returns an `AsyncIterable<Uint8Array[]>` representing one consumer's view of the shared/broadcast data.
 
 **Transfer behavior:**
 
@@ -512,7 +512,7 @@ writer.desiredSize; // null
 
 ### 5.5 Transfer and Multi-Consumer Patterns
 
-Transferring a consumer from `share.pull()` or `broadcast.push()` affects only that consumer. Other consumers are unaffected.
+Transferring a consumer from `share.pull()` or `channel.push()` affects only that consumer. Other consumers are unaffected.
 
 ```js
 const shared = Stream.share(source, { highWaterMark: 100 });

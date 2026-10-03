@@ -788,7 +788,7 @@ export function broadcast(options?: BroadcastOptions): BroadcastResult {
     }
   }
 
-  return { writer, broadcast: broadcastImpl };
+  return { writer, channel: broadcastImpl };
 }
 
 /**
@@ -822,7 +822,7 @@ export const Broadcast = {
       const bc = input[broadcastProtocol](options);
       // The protocol returns Broadcast, we need to create a writer
       // This is a simplification - in practice the protocol would return the full result
-      return { writer: {} as Writer, broadcast: bc };
+      return { writer: {} as Writer, channel: bc };
     }
 
     // Create broadcast and pump from source

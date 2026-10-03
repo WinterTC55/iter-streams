@@ -772,7 +772,7 @@ function broadcast(options) {
             }, { once: true });
         }
     }
-    return { writer: writer, broadcast: broadcastImpl };
+    return { writer: writer, channel: broadcastImpl };
 }
 /**
  * Check if value implements Broadcastable protocol.
@@ -800,7 +800,7 @@ exports.Broadcast = {
             var bc = input[types_js_1.broadcastProtocol](options);
             // The protocol returns Broadcast, we need to create a writer
             // This is a simplification - in practice the protocol would return the full result
-            return { writer: {}, broadcast: bc };
+            return { writer: {}, channel: bc };
         }
         // Create broadcast and pump from source
         var result = broadcast(options);

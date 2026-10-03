@@ -444,11 +444,11 @@ async function main() {
     section('Example 8: Tee to File While Processing');
 
     {
-      const { writer, broadcast } = Stream.broadcast();
+      const { writer, channel } = Stream.broadcast();
 
       // Create branches
-      const fileBranch = broadcast.push();
-      const processBranch = broadcast.push();
+      const fileBranch = channel.push();
+      const processBranch = channel.push();
 
       // Save to file in background
       const savePromise = (async () => {

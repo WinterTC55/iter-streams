@@ -894,10 +894,10 @@ const [result1, result2] = await Promise.all([
 **New Stream API - Push Model (broadcast):**
 ```javascript
 // broadcast() - producer pushes to all consumers
-const { writer, broadcast } = Stream.broadcast();
+const { writer, channel } = Stream.broadcast();
 
-const consumer1 = broadcast.push();
-const consumer2 = broadcast.push();
+const consumer1 = channel.push();
+const consumer2 = channel.push();
 
 // Push data
 await writer.write('shared data');

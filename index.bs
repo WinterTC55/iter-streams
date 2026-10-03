@@ -326,7 +326,7 @@ dictionary PushStreamResult {
 
 dictionary BroadcastResult {
   required Writer writer;
-  required Broadcast broadcast;
+  required Broadcast channel;
 };
 </pre>
 
@@ -1028,8 +1028,8 @@ The <dfn method for="Stream">broadcast(options)</dfn> method creates a [=broadca
 <li>Let |backpressure| be |options|["{{BroadcastOptions/backpressure}}"].
 <li>Create a shared circular buffer with [=byte budget=] |budget|.
 <li>Let |writer| be a new {{Writer}} backed by the shared buffer with |backpressure| policy.
-<li>Let |broadcast| be a new {{Broadcast}} object backed by the shared buffer.
-<li>Return «[ "writer" → |writer|, "broadcast" → |broadcast| ]».
+<li>Let |channel| be a new {{Broadcast}} object backed by the shared buffer.
+<li>Return «[ "writer" → |writer|, "channel" → |channel| ]».
 </ol>
 </div>
 

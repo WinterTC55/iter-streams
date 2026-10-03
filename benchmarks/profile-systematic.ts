@@ -162,10 +162,10 @@ async function main() {
   });
   
   await measure('broadcast() single consumer', iterations, async () => {
-    const { writer, broadcast } = Stream.broadcast<Uint8Array>();
+    const { writer, channel } = Stream.broadcast<Uint8Array>();
     let total = 0;
     const readPromise = (async () => {
-      for await (const batch of broadcast.consume()) {
+      for await (const batch of channel.consume()) {
         for (const chunk of batch) total += chunk.length;
       }
     })();

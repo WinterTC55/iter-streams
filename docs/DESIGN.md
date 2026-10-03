@@ -416,7 +416,7 @@ Creates a multi-consumer broadcast channel where a writer pushes to all consumer
 ```typescript
 function broadcast(options?: BroadcastOptions): {
   writer: Writer;
-  broadcast: Broadcast;
+  channel: Broadcast;
 }
 
 interface Broadcast {
@@ -441,11 +441,11 @@ interface BroadcastOptions {
 
 **Example:**
 ```typescript
-const { writer, broadcast } = Stream.broadcast({ highWaterMark: 100 });
+const { writer, channel } = Stream.broadcast({ highWaterMark: 100 });
 
 // Create consumers with different transforms
-const consumer1 = broadcast.push();
-const consumer2 = broadcast.push(decompress);
+const consumer1 = channel.push();
+const consumer2 = channel.push(decompress);
 
 // Producer
 for await (const chunk of source) {
@@ -507,7 +507,7 @@ const [raw, decompressed, parsed] = await Promise.all([
 |--------|---------------|-----------|
 | Model | Push (writer -> consumers) | Pull (source -> consumers) |
 | Data source | Writer pushes explicitly | Source pulled on demand |
-| Create consumer | `broadcast.push()` | `share.pull()` |
+| Create consumer | `channel.push()` | `share.pull()` |
 | Sync version | No | Yes (`shareSync`) |
 | Use case | Event sources, WebSocket | File, response body, iterables |
 

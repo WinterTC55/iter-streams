@@ -634,11 +634,11 @@ export interface Broadcast {
 }
 
 /**
- * Result of Stream.broadcast() - writer + broadcast pair.
+ * Result of Stream.broadcast() - writer + channel pair.
  */
 export interface BroadcastResult {
   writer: Writer;
-  broadcast: Broadcast;
+  channel: Broadcast;
 }
 
 // =============================================================================
