@@ -375,6 +375,7 @@ Like {{Writer}}, {{SyncWriter}} is an interface, not a concrete class. Implement
 
 *   With `"strict"` and `"unbounded"`, {{SyncWriter/writeSync()}} and {{SyncWriter/writevSync()}} enqueue the chunk(s) and return `true` when the [=byte budget=] has capacity, or return `false` when the budget is exhausted. The data is not accepted; no async fallback is available.
 *   With `"drop-oldest"` and `"drop-newest"`, writes behave as described in [[#concept-backpressure]]: the oldest or newest data is discarded respectively. Writes never fail.
+*   {{SyncWriter/writeSync()}} and {{SyncWriter/writevSync()}} return `true` only when the data was accepted synchronously. A `false` return means the operation could not be performed synchronously; synchronous callers such as {{Stream/pipeToSync()}} must treat it as a failed write.
 *   {{SyncWriter/endSync()}} throws a {{TypeError}} if the writer is already closed or errored.
 *   {{SyncWriter/fail()}} transitions the writer to the errored state. If the writer is already closed or errored, it is a no-op.
 
@@ -836,7 +837,9 @@ The <dfn method for="Stream">pipeToSync(source, ...args)</dfn> method is the syn
 <li>Let |preventClose| be |options|["{{PipeToSyncOptions/preventClose}}"] and |preventFail| be |options|["{{PipeToSyncOptions/preventFail}}"].
 <li>Let |pipeline| be the result of [=compose sync transform pipeline=] with |normalized| and the extracted |transforms|.
 <li>Let |totalBytes| be 0.
-<li>Synchronously iterate |pipeline|. For each |batch| yielded, for each |chunk| in |batch|, add |chunk|'s byte length to |totalBytes|. Then write the batch to |writer|: if |writer| has a `writevSync` method, call |writer|.{{SyncWriter/writevSync()}} with |batch|; otherwise call |writer|.{{SyncWriter/writeSync()}} for each chunk. If the write returns `false`, throw a {{RangeError}} indicating the destination's [=byte budget=] is exhausted.
+<li>Synchronously iterate |pipeline|. For each |batch| yielded, write the batch to |writer|: if |writer| has a `writevSync` method, call |writer|.{{SyncWriter/writevSync()}} with |batch|; otherwise call |writer|.{{SyncWriter/writeSync()}} for each chunk.
+<li>If any call to {{SyncWriter/writeSync()}} or {{SyncWriter/writevSync()}} returns `false`, throw a {{RangeError}} indicating the destination's [=byte budget=] is exhausted, and do not add the failed write's byte length to |totalBytes|.
+<li>For each successfully written |chunk|, add |chunk|'s byte length to |totalBytes|.
 <li>On successful completion, if |preventClose| is `false` and |writer| has an `endSync` method, call |writer|.{{SyncWriter/endSync()}}.
 <li>On error |e|, if |preventFail| is `false` and |writer| has a `fail` method, call |writer|.{{SyncWriter/fail()}} with |e|. Re-throw |e|.
 <li>Return |totalBytes|.

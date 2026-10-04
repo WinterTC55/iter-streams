@@ -1206,17 +1206,22 @@ function pipeToSync(source) {
     try {
         for (var _c = 0, pipeline_1 = pipeline; _c < pipeline_1.length; _c++) {
             var batch = pipeline_1[_c];
-            for (var _d = 0, batch_1 = batch; _d < batch_1.length; _d++) {
-                var chunk = batch_1[_d];
-                totalBytes += chunk.byteLength;
-            }
             if ('writev' in writer && typeof writer.writev === 'function') {
-                writer.writev(batch);
+                if (!writer.writev(batch)) {
+                    throw new Error('Sync writev failed');
+                }
+                for (var _d = 0, batch_1 = batch; _d < batch_1.length; _d++) {
+                    var chunk = batch_1[_d];
+                    totalBytes += chunk.byteLength;
+                }
             }
             else {
                 for (var _e = 0, batch_2 = batch; _e < batch_2.length; _e++) {
                     var chunk = batch_2[_e];
-                    writer.write(chunk);
+                    if (!writer.write(chunk)) {
+                        throw new Error('Sync write failed');
+                    }
+                    totalBytes += chunk.byteLength;
                 }
             }
         }
