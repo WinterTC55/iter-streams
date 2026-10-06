@@ -362,7 +362,7 @@ interface SyncWriter {
 
   boolean writeSync((Uint8Array or USVString) chunk);
   boolean writevSync(sequence&lt;(Uint8Array or USVString)> chunks);
-  unsigned long long endSync();
+  long long endSync();
   undefined fail(optional any reason);
 };
 </pre>
@@ -375,7 +375,7 @@ Like {{Writer}}, {{SyncWriter}} is an interface, not a concrete class. Implement
 
 *   With `"strict"` and `"unbounded"`, {{SyncWriter/writeSync()}} and {{SyncWriter/writevSync()}} enqueue the chunk(s) and return `true` when the [=byte budget=] has capacity, or return `false` when the budget is exhausted. The data is not accepted; no async fallback is available.
 *   With `"drop-oldest"` and `"drop-newest"`, writes behave as described in [[#concept-backpressure]]: the oldest or newest data is discarded respectively. Writes never fail.
-*   {{SyncWriter/endSync()}} throws a {{TypeError}} if the writer is already closed or errored.
+*   {{SyncWriter/endSync()}} has the same contract as {{Writer/endSync()}}: it returns the total number of bytes written (≥ 0) on success, or −1 if the writer cannot end synchronously for any reason, including when the writer is errored. It never throws. Because the two methods have the same signature and contract, one object can implement both {{Writer/endSync()}} and {{SyncWriter/endSync()}}.
 *   {{SyncWriter/fail()}} transitions the writer to the errored state. If the writer is already closed or errored, it is a no-op.
 
 The Broadcast interface {#idl-broadcast}
