@@ -1113,7 +1113,7 @@ The <dfn method for="Broadcast">push(...args)</dfn> method creates a new consume
 <ol>
 <li>Let |transforms| be an empty list and |options| be an empty {{PullOptions}}.
 <li>[=Parse variadic transform arguments=] from |args| into |transforms| and |options|.
-<li>Create a new cursor at the current write position in the shared buffer.
+<li>Create a new cursor at the oldest entry still in the shared buffer (or at the current write position if the buffer is empty), so the new consumer first reads all data still buffered.
 <li>Let |pipelineController| be a new {{AbortController}}. If |options|["{{PullOptions/signal}}"] is present, set |pipelineController|'s signal to follow it.
 <li>Let |cursorIterable| be an async iterable that advances the cursor on each step, waiting for new data if needed.
 <li>Return the result of [=compose transform pipeline=] with |cursorIterable|, |transforms|, and a {{TransformCallbackOptions}} with signal set to |pipelineController|'s signal. On break/error, abort |pipelineController| and detach the cursor.
@@ -1164,6 +1164,8 @@ Note: A rejected pull under `"strict"` does not terminate the consumer's iterato
 
 *   If there are no consumers, no upstream pulls occur (the source is lazy).
 
+*   As with [=broadcast channel|broadcast=], a consumer that joins late begins reading from the oldest entry still in the shared buffer at the time it calls {{Share/pull()}}.
+
 ### `Share.pull()` ### {#share-pull}
 
 <div algorithm>
@@ -1171,7 +1173,7 @@ The <dfn method for="Share">pull(...args)</dfn> method creates a new consumer.
 
 <ol>
 <li>Let |transforms| and |options| be extracted from |args| via [=parse variadic transform arguments=].
-<li>Create a new cursor at the current buffer position. If the source iterator has not been created yet, create it now (lazy initialization).
+<li>Create a new cursor at the oldest entry still in the shared buffer (or at the end of the buffer if it is empty), so the new consumer first reads all data still buffered before any data pulled from upstream. If the source iterator has not been created yet, create it now (lazy initialization).
 <li>Let |pipelineController| be a new {{AbortController}}. If |options|["{{PullOptions/signal}}"] is present, set |pipelineController|'s signal to follow it.
 <li>Let |cursorIterable| be an async iterable that checks the cursor position, reads from the buffer if available or pulls from the source iterator if not, and trims the buffer when all consumers have advanced.
 <li>Return the result of [=compose transform pipeline=] with |cursorIterable|, |transforms|, and a {{TransformCallbackOptions}} with signal set to |pipelineController|'s signal. On break/error, abort |pipelineController| and detach the cursor.
