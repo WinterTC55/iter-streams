@@ -545,7 +545,7 @@ A {{Writer}} provides the interface for producing data. Implementations of {{Wri
 ### `Writer.canWrite` ### {#writer-canwrite}
 
 <div algorithm>
-The <dfn attribute for="Writer">canWrite</dfn> attribute, on getting, returns `null` if the writer is closed or errored. Otherwise it returns `true` if the buffered bytes are below the [=byte budget=] (indicating the next write is likely to be accepted), or `false` if the budget is exhausted (indicating the next write is likely to be refused or will block).
+The <dfn attribute for="Writer">canWrite</dfn> attribute, on getting, returns `null` if the writer is [=closing=], closed, or errored. Otherwise it returns `true` if the buffered bytes are below the [=byte budget=] (indicating the next write is likely to be accepted), or `false` if the budget is exhausted (indicating the next write is likely to be refused or will block).
 </div>
 
 {{Writer/canWrite}} reflects capacity in the slots buffer only; it does not account for writes waiting in the pending writes queue. The result is a hint, not a guarantee: the state can change between the check and the write due to the natural TOCTOU window. The only way to know for certain whether a write will be accepted is to attempt it.
@@ -559,7 +559,7 @@ The <dfn method for="Writer">write(chunk, options)</dfn> method writes a single 
 
 <ol>
 <li>If |chunk| is a {{USVString}}, set |chunk| to the result of [=UTF-8 encode|UTF-8 encoding=] |chunk|.
-<li>If the writer is closed, return [=a promise rejected with=] a {{TypeError}}.
+<li>If the writer is [=closing=] or closed, return [=a promise rejected with=] a {{TypeError}}.
 <li>If the writer is errored, return [=a promise rejected with=] the stored error.
 <li>If |options|["{{WriteOptions/signal}}"] is present and [=AbortSignal/aborted=], return [=a promise rejected with=] its abort reason.
 <li>Let |batch| be « |chunk| ».
@@ -589,7 +589,7 @@ The <dfn method for="Writer">writeSync(chunk)</dfn> method attempts a synchronou
 
 <ol>
 <li>If |chunk| is a {{USVString}}, set |chunk| to the result of [=UTF-8 encode|UTF-8 encoding=] |chunk|.
-<li>If the writer is closed or errored, return `false`.
+<li>If the writer is [=closing=], closed, or errored, return `false`.
 <li>Let |batch| be « |chunk| ».
 <li>Let |byteSize| be the byte length of |chunk|.
 <li>If the buffered bytes are below the [=byte budget=], enqueue |batch|, add |byteSize| to the buffered byte count, [=notify drain waiters=], and return `true`.
@@ -610,12 +610,15 @@ The <dfn method for="Writer">writevSync(chunks)</dfn> method performs the same s
 
 A writer in the <dfn>closing</dfn> state has had {{Writer/end()}} called but has not yet fully drained its buffered data to the consumer.
 
+While [=closing=], the writer accepts no more data: {{Writer/canWrite}} is `null`, {{Writer/write()}} and {{Writer/writev()}} return promises rejected with a {{TypeError}}, {{Writer/writeSync()}} and {{Writer/writevSync()}} return `false`, {{Writer/endSync()}} returns −1, and {{Writer/end()}} returns the pending promise from the call that started closing.
+
 <div algorithm>
 The <dfn method for="Writer">end(options)</dfn> method signals end-of-stream and waits for buffered data to drain.
 
 <ol>
 <li>If the writer is errored, return [=a promise rejected with=] the stored error.
-<li>If the writer is [=closing=] or closed, return [=a promise resolved with=] the total number of bytes written (idempotent).
+<li>If the writer is [=closing=], return the promise returned by the call to {{Writer/end()}} that put the writer into the [=closing=] state.
+<li>If the writer is closed, return [=a promise resolved with=] the total number of bytes written (idempotent).
 <li>Transition the writer to the [=closing=] state.
 <li>Enqueue an end-of-stream sentinel into the buffer.
 <li>Return a promise that resolves with the total number of bytes written when the consumer has consumed past the end sentinel. If {{Writer/fail()}} is called while [=closing=], the promise rejects with the fail reason instead.
@@ -627,7 +630,7 @@ Note: The byte count reflects total bytes passed through the writer, including b
 <div algorithm>
 The <dfn method for="Writer">endSync()</dfn> method attempts synchronous end-of-stream. Returns the total number of bytes written (≥ 0) on success, or −1 if the writer cannot end synchronously for any reason. A return of −1 is the signal to use the [=try-fallback pattern=] and await {{Writer/end()}}.
 
-If the writer is [=closing=] or closed, it returns the total number of bytes written (idempotent). If the writer can transition to the closed state synchronously (e.g., the buffer is empty and no async cleanup is required), it does so and returns the byte count. Otherwise it returns −1.
+If the writer is closed, it returns the total number of bytes written (idempotent). If the writer is [=closing=], it returns −1: the drain started by {{Writer/end()}} has not finished, so the writer is not yet closed, and the caller should await {{Writer/end()}}, which returns the pending promise. If the writer is errored, it returns −1. If the writer is open and can transition to the closed state synchronously (e.g., the buffer is empty and no async cleanup is required), it does so and returns the byte count. Otherwise it returns −1.
 </div>
 
 Note: No assumption should be made about why `endSync()` returns −1. The writer may be errored, the buffer may not be empty, the underlying resource may not support synchronous close, or the implementation may simply not support it. The caller should always fall back to {{Writer/end()}}.
