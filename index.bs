@@ -642,7 +642,7 @@ The <dfn method for="Writer">fail(reason)</dfn> method puts the writer into a te
 
 <ol>
 <li>If the writer is errored or closed, it is a no-op.
-<li>If the writer is [=closing=] (draining after {{Writer/end()}}): transition to the errored state with |reason|, reject the pending end promise with |reason|, reject all pending read promises with |reason|, and call [=notify drain waiters=] with error |reason|.
+<li>If the writer is [=closing=] (draining after {{Writer/end()}}): transition to the errored state with |reason|, reject the pending end promise with |reason|, reject all pending write promises with |reason|, reject all pending read promises with |reason|, and call [=notify drain waiters=] with error |reason|.
 <li>If the writer is open: transition to the errored state with |reason|, reject all pending write promises with |reason|, reject all pending read promises with |reason|, and call [=notify drain waiters=] with error |reason|.
 </ol>
 </div>
