@@ -1108,9 +1108,17 @@ The <dfn method for="Stream">broadcast(options)</dfn> method creates a [=broadca
 <li>Create a shared circular buffer with [=byte budget=] |budget|.
 <li>Let |writer| be a new {{Writer}} backed by the shared buffer with |backpressure| policy.
 <li>Let |broadcast| be a new {{Broadcast}} object backed by the shared buffer.
+<li>Let |signal| be |options|["{{BroadcastOptions/signal}}"] if present; otherwise `undefined`.
+<li>If |signal| is not `undefined`:
+    <ol>
+    <li>If |signal| is [=AbortSignal/aborted=], call |broadcast|.{{Broadcast/cancel()}} with |signal|'s abort reason.
+    <li>Otherwise, [=AbortSignal/add|add the following abort steps=] to |signal|: call |broadcast|.{{Broadcast/cancel()}} with |signal|'s abort reason.
+    </ol>
 <li>Return «[ "writer" → |writer|, "broadcast" → |broadcast| ]».
 </ol>
 </div>
+
+Aborting the {{BroadcastOptions/signal}} cancels the whole [=broadcast channel=] with the abort reason, exactly as if {{Broadcast/cancel()}} had been called with it: the writer is closed and its pending writes are rejected, every consumer's pull rejects with the abort reason, and consumers added later are already errored. If the signal is already aborted when {{Stream/broadcast()}} is called, the returned broadcast is already cancelled. Aborting has no effect if the broadcast has already been cancelled. Once the writer is closed or errored and no consumers remain, the abort steps are removed from the signal, and aborting it afterwards has no effect.
 
 ### Broadcast backpressure ### {#broadcast-backpressure}
 
@@ -1183,7 +1191,7 @@ The <dfn method for="Stream">broadcastFrom(input, options)</dfn> method creates 
     <ol>
     <li>Asynchronously iterate |normalized|. For each |batch| yielded, if |writer|.{{Writer/writevSync()}} with |batch| returns `false`, await |writer|.{{Writer/writev()}} with |batch| and «[ "signal" → |signal| ]».
     <li>When |normalized| is exhausted, if |writer|.{{Writer/endSync()}} returns −1, await |writer|.{{Writer/end()}} with «[ "signal" → |signal| ]».
-    <li>If |broadcast| is cancelled, or |signal| aborts, before these steps finish, stop iterating |normalized|, which calls its iterator's `return()` method.
+    <li>If |broadcast| is cancelled before these steps finish (including because |signal| aborted, which cancels |broadcast|), stop iterating |normalized|, which calls its iterator's `return()` method.
     <li>If iterating |normalized| or writing to |writer| fails with error |e|, and |broadcast| has not been cancelled, call |writer|.{{Writer/fail()}} with |e|.
     </ol>
 <li>Return |broadcast|.
