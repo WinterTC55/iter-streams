@@ -1118,6 +1118,7 @@ The <dfn method for="Broadcast">push(...args)</dfn> method creates a new consume
 <ol>
 <li>Let |transforms| be an empty list and |options| be an empty {{PullOptions}}.
 <li>[=Parse variadic transform arguments=] from |args| into |transforms| and |options|.
+<li>If the broadcast has been cancelled, return a new async iterable whose first pull rejects with the broadcast's cancel reason if one was given, or otherwise returns `{ done: true, value: undefined }`. The new consumer is not registered, reads no buffered data, and does not call any of |transforms|.
 <li>Create a new cursor at the oldest entry still in the shared buffer (or at the current write position if the buffer is empty), so the new consumer first reads all data still buffered.
 <li>Let |pipelineController| be a new {{AbortController}}. If |options|["{{PullOptions/signal}}"] is present, set |pipelineController|'s signal to follow it.
 <li>Let |cursorIterable| be an async iterable that advances the cursor on each step, waiting for new data if needed.
@@ -1127,7 +1128,19 @@ The <dfn method for="Broadcast">push(...args)</dfn> method creates a new consume
 
 ### `Broadcast.cancel()` ### {#broadcast-cancel}
 
-The <dfn method for="Broadcast">cancel(reason)</dfn> method cancels all consumers. If |reason| is provided, each consumer sees it as an error; otherwise they see clean completion.
+<div algorithm>
+The <dfn method for="Broadcast">cancel(reason)</dfn> method cancels the [=broadcast channel=], including its writer.
+
+<ol>
+<li>If the broadcast is already cancelled, return.
+<li>Mark the broadcast as cancelled. If |reason| was given, store it as the broadcast's cancel reason.
+<li>If the broadcast's {{Writer}} is open or [=closing=], transition it to the closed state: reject all of its pending write promises with an "{{AbortError}}" {{DOMException}}, resolve its [=close promise=] (if any) with the total number of bytes written, and call [=notify drain waiters=]. From then on the writer behaves as any closed writer: {{Writer/canWrite}} is `null`, {{Writer/write()}} and {{Writer/writev()}} reject with a {{TypeError}}, and {{Writer/writeSync()}} and {{Writer/writevSync()}} return `false`.
+<li>For each consumer: detach it. Its pending pull, or if none is pending its next pull, rejects with |reason| if |reason| was given, or otherwise returns `{ done: true, value: undefined }`. Any later pulls return `{ done: true, value: undefined }`.
+<li>Discard all data in the shared buffer.
+</ol>
+
+After {{Broadcast/cancel()}}, {{Broadcast/push()}} still returns a consumer, but that consumer is already finished: if a reason was given, its first pull rejects with that reason; otherwise its first pull returns `{ done: true, value: undefined }`. It does not read any data left in the buffer. {{Broadcast/consumerCount}} is 0.
+</div>
 
 Implementations should support `Symbol.dispose` by calling {{Broadcast/cancel()}} with no argument.
 
