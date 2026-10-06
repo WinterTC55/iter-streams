@@ -765,12 +765,12 @@ To <dfn>compose transform pipeline</dfn> given a source async iterable |source|,
     <li>If |transform| is a stateless transform (a function), append it to |statelessRun|.
     <li>If |transform| is a stateful transform (an object with a `"transform"` method):
         <ol>
-        <li>If |statelessRun| is not empty, set |current| to a new async iterable that pulls from |current| and applies each function in |statelessRun| in order per batch (calling each with the current batch and |options|, [=normalize transform output|normalizing=] each result). Reset |statelessRun| to an empty list.
+        <li>If |statelessRun| is not empty, set |current| to the result of [=apply a stateless run=] with |current|, |statelessRun|, and |options|. Reset |statelessRun| to an empty list.
         <li>Let |wrappedSource| be a new async iterable that pulls from |current| and appends a final `null` value (the [=flush signal=]) after the source is exhausted.
         <li>Set |current| to the result of calling |transform|'s `"transform"` method with (|wrappedSource|, |options|). The returned async iterable becomes the new upstream for subsequent transforms.
         </ol>
     </ol>
-<li>If |statelessRun| is not empty after processing all transforms, set |current| to a new async iterable that pulls from |current| and applies each remaining function in |statelessRun| in order per batch, followed by a final pass with `null` (the [=flush signal=]) when the source is exhausted.
+<li>If |statelessRun| is not empty after processing all transforms, set |current| to the result of [=apply a stateless run=] with |current|, |statelessRun|, and |options|.
 <li>Return |current|.
 </ol>
 
@@ -794,12 +794,12 @@ To <dfn>compose sync transform pipeline</dfn> given a source iterable |source| a
     <li>If |transform| is a stateless sync transform (a function), append it to |statelessRun|.
     <li>If |transform| is a stateful sync transform (an object with a `"transform"` method):
         <ol>
-        <li>If |statelessRun| is not empty, set |current| to a new iterable that pulls from |current| and applies each function in |statelessRun| in order per batch, [=normalize transform output|normalizing=] each result. Reset |statelessRun| to an empty list.
+        <li>If |statelessRun| is not empty, set |current| to the result of [=apply a stateless run=] with |current| and |statelessRun|. Reset |statelessRun| to an empty list.
         <li>Let |wrappedSource| be a new iterable that pulls from |current| and appends a final `null` value (the [=flush signal=]) after the source is exhausted.
         <li>Set |current| to the result of calling |transform|'s `"transform"` method with |wrappedSource|. The returned iterable becomes the new upstream.
         </ol>
     </ol>
-<li>If |statelessRun| is not empty, set |current| to a new iterable that applies each remaining function in order per batch, followed by a `null` [=flush signal=] when exhausted.
+<li>If |statelessRun| is not empty, set |current| to the result of [=apply a stateless run=] with |current| and |statelessRun|.
 <li>Return |current|.
 </ol>
 
@@ -807,7 +807,47 @@ Note: Sync stateless transforms receive `(chunks)` with no options parameter (th
 </div>
 
 <div algorithm>
-To <dfn>normalize transform output</dfn> given |value|: if |value| is `null`, return `null`. If |value| is a {{Uint8Array}}, return « |value| ». If |value| is a {{USVString}}, return « [=UTF-8 encode|UTF-8 encoded=] |value| ». If |value| is an {{ArrayBuffer}} or {{ArrayBufferView}}, convert to {{Uint8Array}} and return as a single-element batch. If |value| is iterable, flatten to {{Uint8Array}} chunks and return. Otherwise throw a {{TypeError}}.
+To <dfn>apply a stateless run</dfn> given an upstream iterable |upstream| (async for [=compose transform pipeline=], sync for [=compose sync transform pipeline=]), a non-empty list of stateless transforms |run|, and, in the async case, a {{TransformCallbackOptions}} |options|, return a new iterable of the same kind as |upstream| that behaves as follows. In the async case each function is called with a batch (or `null`) and |options|; in the sync case it is called with the batch (or `null`) only.
+
+<ol>
+<li>For each |batch| pulled from |upstream|:
+    <ol>
+    <li>Let |value| be |batch|.
+    <li>For each |fn| in |run|, in order: set |value| to the result of [=normalize transform output|normalizing=] the result of calling |fn| with |value|. If |value| is `null`, stop processing this batch; the remaining functions in |run| are not called for it.
+    <li>If |value| is not `null`, yield |value|.
+    </ol>
+<li>When |upstream| is exhausted, flush each function in |run| in order, so that every function receives the [=flush signal=] exactly once, after all of its input, including the output that functions earlier in |run| produced when flushed:
+    <ol>
+    <li>Let |pending| be an empty list of batches.
+    <li>For each |fn| in |run|, in order:
+        <ol>
+        <li>Let |next| be an empty list of batches.
+        <li>For each |b| in |pending|: let |r| be the result of [=normalize transform output|normalizing=] the result of calling |fn| with |b|. If |r| is not `null`, append |r| to |next|.
+        <li>Let |r| be the result of [=normalize transform output|normalizing=] the result of calling |fn| with `null`. If |r| is not `null`, append |r| to |next|.
+        <li>Set |pending| to |next|.
+        </ol>
+    <li>Yield each batch in |pending|, in order.
+    </ol>
+</ol>
+
+Every stateless transform in a pipeline receives the [=flush signal=], whether it is followed by a stateful transform or is at the end of the pipeline. A stateless run that precedes a stateful transform is flushed before the stateful transform's source yields its own `null`.
+</div>
+
+<div algorithm>
+To <dfn>normalize transform output</dfn> given |value|:
+
+<ol>
+<li>If |value| is a promise (async pipelines only), set |value| to the result of awaiting it. If it rejects, the error propagates to the consumer.
+<li>If |value| is `null`, return `null`.
+<li>If |value| is a {{Uint8Array}}, return « |value| ».
+<li>If |value| is a {{USVString}}, return « [=UTF-8 encode|UTF-8 encoded=] |value| ».
+<li>If |value| is an {{ArrayBuffer}} or {{ArrayBufferView}}, convert it to a {{Uint8Array}} and return « that {{Uint8Array}} ».
+<li>If |value| has a `Symbol.asyncIterator` method (async pipelines only), asynchronously iterate it, normalizing each yielded value as {{Stream/from()}} does, and flatten the results into a list |chunks| of {{Uint8Array}}s. If |chunks| is empty, return `null`; otherwise return |chunks|.
+<li>If |value| has a `Symbol.iterator` method (including a `Uint8Array[]` batch), iterate it, normalizing each yielded value as {{Stream/from()}} does, and flatten the results into a list |chunks| of {{Uint8Array}}s. If |chunks| is empty, return `null`; otherwise return |chunks|.
+<li>Throw a {{TypeError}}.
+</ol>
+
+In a sync pipeline, a promise or an async iterable returned by a transform is neither awaited nor iterated, and causes a {{TypeError}} (unless it also has a `Symbol.iterator` method).
 </div>
 
 
