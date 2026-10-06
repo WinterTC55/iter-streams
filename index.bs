@@ -1111,14 +1111,15 @@ The <dfn method for="Stream">broadcast(options)</dfn> method creates a [=broadca
 <li>Let |signal| be |options|["{{BroadcastOptions/signal}}"] if present; otherwise `undefined`.
 <li>If |signal| is not `undefined`:
     <ol>
-    <li>If |signal| is [=AbortSignal/aborted=], call |broadcast|.{{Broadcast/cancel()}} with |signal|'s abort reason.
-    <li>Otherwise, [=AbortSignal/add|add the following abort steps=] to |signal|: call |broadcast|.{{Broadcast/cancel()}} with |signal|'s abort reason.
+    <li>Let |abortSteps| be the following steps: call |writer|.{{Writer/fail()}} with |signal|'s abort reason, and then call |broadcast|.{{Broadcast/cancel()}} with |signal|'s abort reason.
+    <li>If |signal| is [=AbortSignal/aborted=], run |abortSteps|.
+    <li>Otherwise, [=AbortSignal/add=] |abortSteps| to |signal|.
     </ol>
 <li>Return «[ "writer" → |writer|, "broadcast" → |broadcast| ]».
 </ol>
 </div>
 
-Aborting the {{BroadcastOptions/signal}} cancels the whole [=broadcast channel=] with the abort reason, exactly as if {{Broadcast/cancel()}} had been called with it: the writer is closed and its pending writes are rejected, every consumer's pull rejects with the abort reason, and consumers added later are already errored. If the signal is already aborted when {{Stream/broadcast()}} is called, the returned broadcast is already cancelled. Aborting has no effect if the broadcast has already been cancelled. Once the writer is closed or errored and no consumers remain, the abort steps are removed from the signal, and aborting it afterwards has no effect.
+Aborting the {{BroadcastOptions/signal}} errors the writer and cancels the [=broadcast channel=], both with the abort reason. The writer enters the errored state, as it does when the signal passed to {{Stream/push()}} aborts: its pending writes and its [=close promise=] (if any) reject with the abort reason, drain waiters are rejected, and later writes reject with the abort reason (or, for {{Writer/writeSync()}} and {{Writer/writevSync()}}, return `false`). Because the writer is already errored, the subsequent {{Broadcast/cancel()}} does not close it; it rejects every consumer's pull with the abort reason, and consumers added later are already errored. An abort is a failure, so the writer is not reported as closed: unlike an explicit {{Broadcast/cancel()}}, it leaves no indication that the producer finished normally. If the signal is already aborted when {{Stream/broadcast()}} is called, the returned writer is already errored and the returned broadcast is already cancelled. Aborting has no effect if the broadcast has already been cancelled. Once the writer is closed or errored and no consumers remain, the abort steps are removed from the signal, and aborting it afterwards has no effect.
 
 ### Broadcast backpressure ### {#broadcast-backpressure}
 
