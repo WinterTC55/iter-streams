@@ -122,6 +122,8 @@ Streams as iterables {#concept-iterables}
 
 In this API, a stream is not a custom class. It is a standard ECMAScript iterable. An async byte stream conforms to the `AsyncIterable<Uint8Array[]>` protocol, and a sync byte stream conforms to the `Iterable<Uint8Array[]>` protocol. Consumers iterate streams using `for await...of` or `for...of`.
 
+Note: The iterator result objects produced by the iterables this specification returns, and the {{TransformCallbackOptions}} objects passed to transforms, are not required to be ordinary objects. In particular, they need not inherit from `%Object.prototype%`, so that properties added to `Object.prototype` (such as `then`) do not show through on them. Code should only rely on the `done` and `value` properties of iterator results, and on the `signal` property of the options object passed to a transform.
+
 Batched chunks {#concept-batched}
 ---------------------------------
 
