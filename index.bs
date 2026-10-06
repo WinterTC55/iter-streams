@@ -250,6 +250,7 @@ dictionary PipeToOptions {
 dictionary PipeToSyncOptions {
   boolean preventClose = false;
   boolean preventFail = false;
+  boolean failOnIncompleteClose = false;
 };
 
 dictionary ConsumeOptions {
@@ -890,15 +891,28 @@ The <dfn method for="Stream">pipeToSync(source, ...args)</dfn> method is the syn
 <ol>
 <li>Let |normalized| be the result of calling {{Stream/fromSync()}} with |source|.
 <li>Let (|transforms|, |writer|, |options|) be the result of [=parse pipeTo arguments=] from the remaining |args| with |requiredMethod| set to `"writeSync"`.
-<li>Let |preventClose| be |options|["{{PipeToSyncOptions/preventClose}}"] and |preventFail| be |options|["{{PipeToSyncOptions/preventFail}}"].
+<li>Let |preventClose| be |options|["{{PipeToSyncOptions/preventClose}}"], |preventFail| be |options|["{{PipeToSyncOptions/preventFail}}"], and |failOnIncompleteClose| be |options|["{{PipeToSyncOptions/failOnIncompleteClose}}"].
 <li>Let |pipeline| be the result of [=compose sync transform pipeline=] with |normalized| and the extracted |transforms|.
 <li>Let |totalBytes| be 0.
 <li>Synchronously iterate |pipeline|. For each |batch| yielded, for each |chunk| in |batch|, add |chunk|'s byte length to |totalBytes|. Then write the batch to |writer|: if |writer| has a `writevSync` method, call |writer|.{{SyncWriter/writevSync()}} with |batch|; otherwise call |writer|.{{SyncWriter/writeSync()}} for each chunk. If the write returns `false`, throw a {{RangeError}} indicating the destination's [=byte budget=] is exhausted.
-<li>On successful completion, if |preventClose| is `false` and |writer| has an `endSync` method, call |writer|.{{SyncWriter/endSync()}}.
-<li>On error |e|, if |preventFail| is `false` and |writer| has a `fail` method, call |writer|.{{SyncWriter/fail()}} with |e|. Re-throw |e|.
+<li>On error |e| during the previous step, if |preventFail| is `false` and |writer| has a `fail` method, call |writer|.{{SyncWriter/fail()}} with |e|. Re-throw |e|.
+<li>If |preventClose| is `false` and |writer| has an `endSync` method:
+    <ol>
+    <li>Let |result| be the result of calling |writer|.{{SyncWriter/endSync()}}. If this throws an exception |e|, handle it as in the previous step.
+    <li>If |result| is −1 (the writer could not close synchronously):
+        <ol>
+        <li>Let |error| be a new {{TypeError}} indicating that the destination could not be closed synchronously.
+        <li>If |failOnIncompleteClose| is `true`, |preventFail| is `false`, and |writer| has a `fail` method, call |writer|.{{SyncWriter/fail()}} with |error|.
+        <li>Throw |error|.
+        </ol>
+    </ol>
 <li>Return |totalBytes|.
 </ol>
 </div>
+
+If {{SyncWriter/endSync()}} returns −1, all of the data has been accepted by the writer, but the writer is still open. By default {{Stream/pipeToSync()}} throws without failing the writer, so the caller may still close it by other means, for example with `await writer.end()`. For writers that cannot be closed any other way, setting {{PipeToSyncOptions/failOnIncompleteClose}} to `true` fails the writer with the thrown error instead. {{PipeToSyncOptions/preventFail}} takes precedence: when it is `true`, the writer is never failed.
+
+If {{PipeToSyncOptions/preventClose}} is `false` but the writer has no `endSync` method, {{Stream/pipeToSync()}} does not close the writer and returns normally; closing it is the caller's responsibility.
 
 
 Consumers {#consumers}
