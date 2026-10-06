@@ -726,7 +726,7 @@ The <dfn method for="Stream">pull(source, ...args)</dfn> method creates a [=pull
 <li>If |signal| is not `undefined` and [=AbortSignal/aborted=], return an async iterable that immediately throws the abort reason.
 <li>Let |pipelineController| be a new {{AbortController}}. If |signal| is not `undefined`, set |pipelineController|'s signal to follow |signal|.
 <li>If |pipelineController|'s signal aborts before a pull from the returned async iterable settles, reject that pull with |pipelineController|'s abort reason. Future pulls must also reject with that reason.
-<li>If |pipelineController|'s signal aborts while waiting for an upstream source iterator's `next()` result, reject the returned async iterable's pending pull and call that upstream iterator's `return()` method if present. This does not require canceling the promise returned by the upstream `next()` call.
+<li>If |pipelineController|'s signal aborts while waiting for an upstream source iterator's `next()` result, first call that upstream iterator's `return()` method if present, and then reject the returned async iterable's pending pull with the abort reason. Rejecting the pull does not wait for the promise returned by `return()` to settle, and does not require canceling the promise returned by the upstream `next()` call.
 <li>Let |transformOptions| be a {{TransformCallbackOptions}} with signal set to |pipelineController|'s signal.
 <li>Let |composed| be the result of [=compose transform pipeline=] with |normalized|, |transforms|, and |transformOptions|.
 <li>Return |composed|. On return (consumer breaks), the pipeline controller is aborted.
