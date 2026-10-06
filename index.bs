@@ -688,7 +688,7 @@ The <dfn method for="Stream">from(input)</dfn> method creates an `AsyncIterable<
 </ol>
 </div>
 
-Note: WHATWG `ReadableStream` objects implement `Symbol.asyncIterator` and are therefore accepted by step 6. However, `ReadableStream` yields individual chunks (not `Uint8Array[]` batches), so each chunk is normalized and wrapped into a single-element batch. No special-casing of `ReadableStream` is required or defined by this specification.
+Note: WHATWG `ReadableStream` objects implement `Symbol.asyncIterator` and are therefore accepted by step 7. However, `ReadableStream` yields individual chunks (not `Uint8Array[]` batches), so each chunk is normalized and wrapped into a single-element batch. No special-casing of `ReadableStream` is required or defined by this specification.
 
 `Stream.fromSync()` {#fromsync-method}
 --------------------------------------
