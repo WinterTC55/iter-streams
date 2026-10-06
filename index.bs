@@ -1280,7 +1280,8 @@ To <dfn>parse variadic transform arguments</dfn> from an arguments list |args|, 
 
 <ol>
 <li>Let |transforms| be an empty list and |options| be `undefined`.
-<li>For each |arg| in |args|: if |arg| is a [=transform argument=], append it to |transforms|; otherwise, if |options| is `undefined`, set |options| to |arg|; otherwise throw a {{TypeError}}.
+<li>If |args| is not empty and its final element is not a [=transform argument=], set |options| to that element and remove it from |args|.
+<li>For each remaining |arg| in |args|: if |arg| is a [=transform argument=], append it to |transforms|; otherwise throw a {{TypeError}}.
 <li>If |options| is `undefined`, set |options| to an empty dictionary.
 <li>Return (|transforms|, |options|).
 </ol>
