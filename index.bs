@@ -290,9 +290,14 @@ dictionary ShareOptions {
   AbortSignal signal;
 };
 
+enum SyncShareBackpressurePolicy {
+  "strict",
+  "drop-oldest"
+};
+
 dictionary ShareSyncOptions {
   [EnforceRange] unsigned long long budget;
-  BackpressurePolicy backpressure = "strict";
+  SyncShareBackpressurePolicy backpressure = "strict";
 };
 </pre>
 
@@ -1198,6 +1203,8 @@ The <dfn method for="Stream">shareSync(source, options)</dfn> method creates a s
 <li>Return a new {{SyncShare}} object backed by the shared buffer, |backpressure| policy, and |normalized| as the upstream source.
 </ol>
 </div>
+
+{{ShareSyncOptions/backpressure}} only accepts `"strict"` and `"drop-oldest"`; other {{BackpressurePolicy}} values, such as `"unbounded"` and `"drop-newest"`, are rejected with a {{TypeError}} when the options dictionary is converted. A synchronous `next()` cannot wait for budget, and the slowest consumer cannot advance while another consumer's `next()` is running, so neither policy has a workable meaning for a synchronous [=shared source=]: `"unbounded"` would have to wait, and `"drop-newest"` could only discard upstream data repeatedly or report an end of stream that did not happen. With `"strict"` and `"drop-oldest"`, a synchronous [=shared source=] behaves as described in [[#share-backpressure]].
 
 
 Duplex channels {#duplex-section}
