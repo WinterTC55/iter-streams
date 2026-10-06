@@ -122,6 +122,8 @@ Streams as iterables {#concept-iterables}
 
 In this API, a stream is not a custom class. It is a standard ECMAScript iterable. An async byte stream conforms to the `AsyncIterable<Uint8Array[]>` protocol, and a sync byte stream conforms to the `Iterable<Uint8Array[]>` protocol. Consumers iterate streams using `for await...of` or `for...of`.
 
+Note: The iterator result objects produced by the iterables this specification returns, and the {{TransformCallbackOptions}} objects passed to transforms, are not required to be ordinary objects. In particular, they need not inherit from `%Object.prototype%`, so that properties added to `Object.prototype` (such as `then`) do not show through on them. Code should only rely on the `done` and `value` properties of iterator results, and on the `signal` property of the options object passed to a transform.
+
 Batched chunks {#concept-batched}
 ---------------------------------
 
@@ -144,7 +146,7 @@ Backpressure is the mechanism by which a consumer signals to a producer that it 
 
 The internal slots buffer has a byte budget controlling how much data may accumulate. Each write operation occupies one slot. The slot count is elastic: small writes consume little budget so many slots fit; large writes consume more budget so fewer slots fit. A write is accepted when the buffered bytes are below the budget, regardless of the write's own size. Once accepted, the write consumes budget equal to its byte size, even if this overshoots the remaining budget. The next write then sees the budget exhausted and the [=backpressure policy=] determines what happens.
 
-The `budget` option specifies the initial byte budget for writers created by {{Stream/push()}}, {{Stream/broadcast()}}, {{Stream/share()}}, and {{Stream/duplex()}}. If not provided, the implementation selects a default that must be at least 16384 bytes (16 KB). Implementations may apply a reasonable upper limit.
+The `budget` option specifies the initial byte budget for writers created by {{Stream/push()}}, {{Stream/broadcast()}}, {{Stream/share()}}, and {{Stream/duplex()}}. If not provided, the implementation selects a default that must be at least 16384 bytes (16 KB). The 16384-byte floor applies only to that default: an explicitly provided `budget` must be at least 1, and a `budget` of 0 causes a {{RangeError}}. Implementations may apply a reasonable upper limit.
 
 The [=byte budget=] is not required to remain fixed for the lifetime of a writer. Implementations may adjust the budget dynamically in response to external factors such as flow control signals, memory pressure, or network conditions. For example, a {{Writer}} backed by a QUIC stream may have a budget governed by the stream's flow control window, which can expand or contract independently of write operations. All backpressure checks evaluate the budget at call time; a budget that increases between writes may cause {{Writer/canWrite}} to transition from `false` to `true` and may resolve pending {{Stream/ondrain()}} promises without any data being consumed.
 
@@ -232,7 +234,7 @@ dictionary WriteOptions {
 };
 
 dictionary PushStreamOptions {
-  unsigned long long budget;
+  [EnforceRange] unsigned long long budget;
   BackpressurePolicy backpressure = "strict";
   AbortSignal signal;
 };
@@ -250,6 +252,7 @@ dictionary PipeToOptions {
 dictionary PipeToSyncOptions {
   boolean preventClose = false;
   boolean preventFail = false;
+  boolean failOnIncompleteClose = false;
 };
 
 dictionary ConsumeOptions {
@@ -279,33 +282,38 @@ dictionary MergeOptions {
 };
 
 dictionary BroadcastOptions {
-  unsigned long long budget;
+  [EnforceRange] unsigned long long budget;
   BackpressurePolicy backpressure = "strict";
   AbortSignal signal;
 };
 
 dictionary ShareOptions {
-  unsigned long long budget;
+  [EnforceRange] unsigned long long budget;
   BackpressurePolicy backpressure = "strict";
   AbortSignal signal;
 };
 
+enum SyncShareBackpressurePolicy {
+  "strict",
+  "drop-oldest"
+};
+
 dictionary ShareSyncOptions {
-  unsigned long long budget;
-  BackpressurePolicy backpressure = "strict";
+  [EnforceRange] unsigned long long budget;
+  SyncShareBackpressurePolicy backpressure = "strict";
 };
 </pre>
 
-Note: The `budget` must be at least 16384 bytes (16 KB); implementations may choose a higher default. Implementations may also choose a larger default for multi-consumer patterns ({{BroadcastOptions}}, {{ShareOptions}}, {{ShareSyncOptions}}) than for single-consumer patterns ({{PushStreamOptions}}, {{DuplexOptions}}), because the slowest consumer governs backpressure and a larger budget provides more headroom before fast consumers are stalled by a slow one.
+Note: When `budget` is not provided, the implementation-defined default must be at least 16384 bytes (16 KB); implementations may choose a higher default. An explicitly provided `budget` only needs to be at least 1; values that are negative or not finite are rejected with a {{TypeError}} by `[EnforceRange]`, and 0 is rejected with a {{RangeError}} by the algorithms that use it. Implementations may also choose a larger default for multi-consumer patterns ({{BroadcastOptions}}, {{ShareOptions}}, {{ShareSyncOptions}}) than for single-consumer patterns ({{PushStreamOptions}}, {{DuplexOptions}}), because the slowest consumer governs backpressure and a larger budget provides more headroom before fast consumers are stalled by a slow one.
 
 <pre class="idl">
 dictionary DuplexDirectionOptions {
-  unsigned long long budget;
+  [EnforceRange] unsigned long long budget;
   BackpressurePolicy backpressure;
 };
 
 dictionary DuplexOptions {
-  unsigned long long budget;
+  [EnforceRange] unsigned long long budget;
   BackpressurePolicy backpressure = "strict";
   DuplexDirectionOptions a;
   DuplexDirectionOptions b;
@@ -362,7 +370,7 @@ interface SyncWriter {
 
   boolean writeSync((Uint8Array or USVString) chunk);
   boolean writevSync(sequence&lt;(Uint8Array or USVString)> chunks);
-  unsigned long long endSync();
+  long long endSync();
   undefined fail(optional any reason);
 };
 </pre>
@@ -375,7 +383,7 @@ Like {{Writer}}, {{SyncWriter}} is an interface, not a concrete class. Implement
 
 *   With `"strict"` and `"unbounded"`, {{SyncWriter/writeSync()}} and {{SyncWriter/writevSync()}} enqueue the chunk(s) and return `true` when the [=byte budget=] has capacity, or return `false` when the budget is exhausted. The data is not accepted; no async fallback is available.
 *   With `"drop-oldest"` and `"drop-newest"`, writes behave as described in [[#concept-backpressure]]: the oldest or newest data is discarded respectively. Writes never fail.
-*   {{SyncWriter/endSync()}} throws a {{TypeError}} if the writer is already closed or errored.
+*   {{SyncWriter/endSync()}} has the same contract as {{Writer/endSync()}}: it returns the total number of bytes written (≥ 0) on success, or −1 if the writer cannot end synchronously for any reason, including when the writer is errored. It never throws. Because the two methods have the same signature and contract, one object can implement both {{Writer/endSync()}} and {{SyncWriter/endSync()}}.
 *   {{SyncWriter/fail()}} transitions the writer to the errored state. If the writer is already closed or errored, it is a no-op.
 
 The Broadcast interface {#idl-broadcast}
@@ -486,6 +494,7 @@ namespace Stream {
 
   /* Multi-consumer */
   BroadcastResult broadcast(optional BroadcastOptions options = {});
+  Broadcast broadcastFrom(any input, optional BroadcastOptions options = {});
   Share share(any source, optional ShareOptions options = {});
   SyncShare shareSync(any source, optional ShareSyncOptions options = {});
 
@@ -519,6 +528,7 @@ When called, it performs the following steps:
 <ol>
 <li>Let |transforms| be an empty list and |options| be an empty {{PushStreamOptions}}.
 <li>[=Parse variadic transform arguments=] from |args| into |transforms| and |options|.
+<li>If |options|["{{PushStreamOptions/budget}}"] is present and is 0, throw a {{RangeError}}.
 <li>Let |budget| be |options|["{{PushStreamOptions/budget}}"] if present; otherwise an implementation-defined default that must be at least 16384 bytes.
 <li>Let |backpressure| be |options|["{{PushStreamOptions/backpressure}}"].
 <li>Let |signal| be |options|["{{PushStreamOptions/signal}}"] if present; otherwise `undefined`.
@@ -545,7 +555,7 @@ A {{Writer}} provides the interface for producing data. Implementations of {{Wri
 ### `Writer.canWrite` ### {#writer-canwrite}
 
 <div algorithm>
-The <dfn attribute for="Writer">canWrite</dfn> attribute, on getting, returns `null` if the writer is closed or errored. Otherwise it returns `true` if the buffered bytes are below the [=byte budget=] (indicating the next write is likely to be accepted), or `false` if the budget is exhausted (indicating the next write is likely to be refused or will block).
+The <dfn attribute for="Writer">canWrite</dfn> attribute, on getting, returns `null` if the writer is [=closing=], closed, or errored. Otherwise it returns `true` if the buffered bytes are below the [=byte budget=] (indicating the next write is likely to be accepted), or `false` if the budget is exhausted (indicating the next write is likely to be refused or will block).
 </div>
 
 {{Writer/canWrite}} reflects capacity in the slots buffer only; it does not account for writes waiting in the pending writes queue. The result is a hint, not a guarantee: the state can change between the check and the write due to the natural TOCTOU window. The only way to know for certain whether a write will be accepted is to attempt it.
@@ -559,7 +569,7 @@ The <dfn method for="Writer">write(chunk, options)</dfn> method writes a single 
 
 <ol>
 <li>If |chunk| is a {{USVString}}, set |chunk| to the result of [=UTF-8 encode|UTF-8 encoding=] |chunk|.
-<li>If the writer is closed, return [=a promise rejected with=] a {{TypeError}}.
+<li>If the writer is [=closing=] or closed, return [=a promise rejected with=] a {{TypeError}}.
 <li>If the writer is errored, return [=a promise rejected with=] the stored error.
 <li>If |options|["{{WriteOptions/signal}}"] is present and [=AbortSignal/aborted=], return [=a promise rejected with=] its abort reason.
 <li>Let |batch| be « |chunk| ».
@@ -589,7 +599,7 @@ The <dfn method for="Writer">writeSync(chunk)</dfn> method attempts a synchronou
 
 <ol>
 <li>If |chunk| is a {{USVString}}, set |chunk| to the result of [=UTF-8 encode|UTF-8 encoding=] |chunk|.
-<li>If the writer is closed or errored, return `false`.
+<li>If the writer is [=closing=], closed, or errored, return `false`.
 <li>Let |batch| be « |chunk| ».
 <li>Let |byteSize| be the byte length of |chunk|.
 <li>If the buffered bytes are below the [=byte budget=], enqueue |batch|, add |byteSize| to the buffered byte count, [=notify drain waiters=], and return `true`.
@@ -608,18 +618,28 @@ The <dfn method for="Writer">writevSync(chunks)</dfn> method performs the same s
 
 ### `Writer.end()` / `Writer.endSync()` ### {#writer-end}
 
-A writer in the <dfn>closing</dfn> state has had {{Writer/end()}} called but has not yet fully drained its buffered data to the consumer.
+A writer in the <dfn>closing</dfn> state has had {{Writer/end()}} called but has not yet fully drained its buffered data to the consumer. On entering the [=closing=] state, a writer creates its <dfn>close promise</dfn>, which resolves with the total number of bytes written when the consumer has consumed past the end sentinel, or rejects with the fail reason if {{Writer/fail()}} is called while [=closing=].
+
+While [=closing=], the writer accepts no more data: {{Writer/canWrite}} is `null`, {{Writer/write()}} and {{Writer/writev()}} return promises rejected with a {{TypeError}}, {{Writer/writeSync()}} and {{Writer/writevSync()}} return `false`, {{Writer/endSync()}} returns −1, and {{Writer/end()}} returns the [=close promise=] (or, when given a signal, a promise that follows it).
 
 <div algorithm>
 The <dfn method for="Writer">end(options)</dfn> method signals end-of-stream and waits for buffered data to drain.
 
 <ol>
+<li>Let |signal| be |options|["{{WriteOptions/signal}}"] if present; otherwise `undefined`.
 <li>If the writer is errored, return [=a promise rejected with=] the stored error.
-<li>If the writer is [=closing=] or closed, return [=a promise resolved with=] the total number of bytes written (idempotent).
-<li>Transition the writer to the [=closing=] state.
-<li>Enqueue an end-of-stream sentinel into the buffer.
-<li>Return a promise that resolves with the total number of bytes written when the consumer has consumed past the end sentinel. If {{Writer/fail()}} is called while [=closing=], the promise rejects with the fail reason instead.
+<li>If the writer is closed, return [=a promise resolved with=] the total number of bytes written (idempotent).
+<li>If |signal| is not `undefined` and is [=AbortSignal/aborted=], return [=a promise rejected with=] its abort reason. The writer's state is not changed.
+<li>If the writer is open:
+    <ol>
+    <li>Transition the writer to the [=closing=] state and create its [=close promise=].
+    <li>Enqueue an end-of-stream sentinel into the buffer.
+    </ol>
+<li>If |signal| is `undefined`, return the writer's [=close promise=].
+<li>Return a new promise |p| that settles as the writer's [=close promise=] settles. If |signal| aborts before the [=close promise=] settles, reject |p| with |signal|'s abort reason.
 </ol>
+
+Aborting the signal passed to {{Writer/end()}} only rejects the promise returned by that call, as the signal passed to {{Writer/write()}} only affects that write. It does not change the writer's state: the writer remains [=closing=], the drain continues, and the [=close promise=] and the promises returned by other calls to {{Writer/end()}} are unaffected. To abandon the drain, call {{Writer/fail()}}.
 
 Note: The byte count reflects total bytes passed through the writer, including bytes discarded under `"drop-oldest"` or `"drop-newest"` policies. It is a measure of throughput, not of bytes delivered to the consumer.
 </div>
@@ -627,7 +647,7 @@ Note: The byte count reflects total bytes passed through the writer, including b
 <div algorithm>
 The <dfn method for="Writer">endSync()</dfn> method attempts synchronous end-of-stream. Returns the total number of bytes written (≥ 0) on success, or −1 if the writer cannot end synchronously for any reason. A return of −1 is the signal to use the [=try-fallback pattern=] and await {{Writer/end()}}.
 
-If the writer is [=closing=] or closed, it returns the total number of bytes written (idempotent). If the writer can transition to the closed state synchronously (e.g., the buffer is empty and no async cleanup is required), it does so and returns the byte count. Otherwise it returns −1.
+If the writer is closed, it returns the total number of bytes written (idempotent). If the writer is [=closing=], it returns −1: the drain started by {{Writer/end()}} has not finished, so the writer is not yet closed, and the caller should await {{Writer/end()}}, which returns the [=close promise=]. If the writer is errored, it returns −1. If the writer is open and can transition to the closed state synchronously (e.g., the buffer is empty and no async cleanup is required), it does so and returns the byte count. Otherwise it returns −1.
 </div>
 
 Note: No assumption should be made about why `endSync()` returns −1. The writer may be errored, the buffer may not be empty, the underlying resource may not support synchronous close, or the implementation may simply not support it. The caller should always fall back to {{Writer/end()}}.
@@ -639,7 +659,7 @@ The <dfn method for="Writer">fail(reason)</dfn> method puts the writer into a te
 
 <ol>
 <li>If the writer is errored or closed, it is a no-op.
-<li>If the writer is [=closing=] (draining after {{Writer/end()}}): transition to the errored state with |reason|, reject the pending end promise with |reason|, reject all pending read promises with |reason|, and call [=notify drain waiters=] with error |reason|.
+<li>If the writer is [=closing=] (draining after {{Writer/end()}}): transition to the errored state with |reason|, reject the [=close promise=] with |reason|, reject all pending write promises with |reason|, reject all pending read promises with |reason|, and call [=notify drain waiters=] with error |reason|.
 <li>If the writer is open: transition to the errored state with |reason|, reject all pending write promises with |reason|, reject all pending read promises with |reason|, and call [=notify drain waiters=] with error |reason|.
 </ol>
 </div>
@@ -650,7 +670,7 @@ Note: `fail()` is unconditionally synchronous. If called while the writer is [=c
 
 Implementations of {{Writer}} should support both `Symbol.asyncDispose` and `Symbol.dispose`:
 
-*   `Symbol.asyncDispose`: If the writer is open, calls {{Writer/fail()}} with no argument and returns a resolved promise. If the writer is [=closing=] (end was called, draining), returns the pending end promise, allowing the graceful drain to complete. If the writer is closed or errored, returns a resolved promise.
+*   `Symbol.asyncDispose`: If the writer is open, calls {{Writer/fail()}} with no argument and returns a resolved promise. If the writer is [=closing=] (end was called, draining), returns the [=close promise=], allowing the graceful drain to complete. If the writer is closed or errored, returns a resolved promise.
 
 *   `Symbol.dispose`: Calls {{Writer/fail()}} with no argument unconditionally (cannot wait for drain).
 
@@ -671,13 +691,15 @@ The <dfn method for="Stream">from(input)</dfn> method creates an `AsyncIterable<
 <li>If |input| is an {{ArrayBufferView}}, return an async iterable yielding a single batch containing a {{Uint8Array}} view over the same buffer region (zero-copy).
 <li>If |input| has a method keyed by `Symbol.for('Stream.toAsyncStreamable')`, call that method and recursively normalize the result (awaiting if it returns a promise). This step takes precedence over the `toStreamable` protocol and the iteration protocols below.
 <li>If |input| has a method keyed by `Symbol.for('Stream.toStreamable')`, call that method and recursively normalize the result. This step takes precedence over the iteration protocols below.
-<li>If |input| has a `Symbol.asyncIterator` method, return a new `AsyncIterable<Uint8Array[]>` that pulls from the resulting async iterator and normalizes each yielded value to a `Uint8Array[]` batch. Each yielded value is recursively normalized: strings are UTF-8 encoded; {{ArrayBuffer}} and {{ArrayBufferView}} values are converted to {{Uint8Array}}; arrays are flattened with each element normalized; nested iterables and async iterables are recursively consumed and flattened; objects with the `toStreamable` or `toAsyncStreamable` protocol are converted via that protocol. Values that are not convertible to {{Uint8Array}} cause a {{TypeError}}. Synchronous values encountered in sequence should be batched together into a single `Uint8Array[]` to maximize batching efficiency.
+<li>If |input| has a `Symbol.asyncIterator` method, then if |input| is an async iterable created by the implementation that is known to yield only normalized `Uint8Array[]` batches (for example, the `readable` returned by {{Stream/push()}}, or a [=pull pipeline=] returned by {{Stream/pull()}}), the implementation may return |input| itself. Otherwise, return a new `AsyncIterable<Uint8Array[]>` that pulls from the resulting async iterator and normalizes each yielded value to a `Uint8Array[]` batch. Each yielded value is recursively normalized: strings are UTF-8 encoded; {{ArrayBuffer}} and {{ArrayBufferView}} values are converted to {{Uint8Array}}; arrays are flattened with each element normalized; nested iterables and async iterables are recursively consumed and flattened; objects with the `toStreamable` or `toAsyncStreamable` protocol are converted via that protocol. Values that are not convertible to {{Uint8Array}} cause a {{TypeError}}. Synchronous values encountered in sequence should be batched together into a single `Uint8Array[]` to maximize batching efficiency.
 <li>If |input| has a `Symbol.iterator` method, treat the sync iterator as an async source and normalize as in the previous step (except that nested async iterables and the `toAsyncStreamable` protocol are not supported and cause a {{TypeError}} during normalization).
 <li>Throw a {{TypeError}}.
 </ol>
 </div>
 
-Note: WHATWG `ReadableStream` objects implement `Symbol.asyncIterator` and are therefore accepted by step 6. However, `ReadableStream` yields individual chunks (not `Uint8Array[]` batches), so each chunk is normalized and wrapped into a single-element batch. No special-casing of `ReadableStream` is required or defined by this specification.
+Note: Returning |input| itself in step 7 is an optimization and is not observable in the data a consumer receives: normalizing a stream that already yields normalized batches would produce the same batches with an extra layer on every read. Since {{Stream/pull()}}, {{Stream/pipeTo()}}, and the consumers call {{Stream/from()}} on their source, this avoids that cost when, for example, piping from a [=push stream=]. Code must not rely on whether {{Stream/from()}} returns |input| or a new object.
+
+Note: WHATWG `ReadableStream` objects implement `Symbol.asyncIterator` and are therefore accepted by step 7. However, `ReadableStream` yields individual chunks (not `Uint8Array[]` batches), so each chunk is normalized and wrapped into a single-element batch. No special-casing of `ReadableStream` is required or defined by this specification.
 
 `Stream.fromSync()` {#fromsync-method}
 --------------------------------------
@@ -704,7 +726,8 @@ The <dfn method for="Stream">pull(source, ...args)</dfn> method creates a [=pull
 <li>If |signal| is not `undefined` and [=AbortSignal/aborted=], return an async iterable that immediately throws the abort reason.
 <li>Let |pipelineController| be a new {{AbortController}}. If |signal| is not `undefined`, set |pipelineController|'s signal to follow |signal|.
 <li>If |pipelineController|'s signal aborts before a pull from the returned async iterable settles, reject that pull with |pipelineController|'s abort reason. Future pulls must also reject with that reason.
-<li>If |pipelineController|'s signal aborts while waiting for an upstream source iterator's `next()` result, reject the returned async iterable's pending pull and call that upstream iterator's `return()` method if present. This does not require canceling the promise returned by the upstream `next()` call.
+<li>If |pipelineController|'s signal aborts while waiting for an upstream source iterator's `next()` result, first call that upstream iterator's `return()` method if present, and then reject the returned async iterable's pending pull with the abort reason. Rejecting the pull does not wait for the promise returned by `return()` to settle, and does not require canceling the promise returned by the upstream `next()` call.
+<li>If |pipelineController|'s signal aborts while no pull from the returned async iterable is pending, the upstream source iterator, if it has been created and has not already completed, must be closed by calling its `return()` method (if present) no later than when the next pull from the returned async iterable is made. The implementation may call `return()` as soon as the signal aborts. If `return()` has not yet been called when the next pull is made, it is called first, and then that pull is rejected with the abort reason, as in the previous step. In either case, `return()` is called on the upstream iterator at most once. Calling `return()` on the returned async iterable's iterator also closes the upstream iterator, if it has not been closed already.
 <li>Let |transformOptions| be a {{TransformCallbackOptions}} with signal set to |pipelineController|'s signal.
 <li>Let |composed| be the result of [=compose transform pipeline=] with |normalized|, |transforms|, and |transformOptions|.
 <li>Return |composed|. On return (consumer breaks), the pipeline controller is aborted.
@@ -754,12 +777,12 @@ To <dfn>compose transform pipeline</dfn> given a source async iterable |source|,
     <li>If |transform| is a stateless transform (a function), append it to |statelessRun|.
     <li>If |transform| is a stateful transform (an object with a `"transform"` method):
         <ol>
-        <li>If |statelessRun| is not empty, set |current| to a new async iterable that pulls from |current| and applies each function in |statelessRun| in order per batch (calling each with the current batch and |options|, [=normalize transform output|normalizing=] each result). Reset |statelessRun| to an empty list.
+        <li>If |statelessRun| is not empty, set |current| to the result of [=apply a stateless run=] with |current|, |statelessRun|, and |options|. Reset |statelessRun| to an empty list.
         <li>Let |wrappedSource| be a new async iterable that pulls from |current| and appends a final `null` value (the [=flush signal=]) after the source is exhausted.
         <li>Set |current| to the result of calling |transform|'s `"transform"` method with (|wrappedSource|, |options|). The returned async iterable becomes the new upstream for subsequent transforms.
         </ol>
     </ol>
-<li>If |statelessRun| is not empty after processing all transforms, set |current| to a new async iterable that pulls from |current| and applies each remaining function in |statelessRun| in order per batch, followed by a final pass with `null` (the [=flush signal=]) when the source is exhausted.
+<li>If |statelessRun| is not empty after processing all transforms, set |current| to the result of [=apply a stateless run=] with |current|, |statelessRun|, and |options|.
 <li>Return |current|.
 </ol>
 
@@ -783,12 +806,12 @@ To <dfn>compose sync transform pipeline</dfn> given a source iterable |source| a
     <li>If |transform| is a stateless sync transform (a function), append it to |statelessRun|.
     <li>If |transform| is a stateful sync transform (an object with a `"transform"` method):
         <ol>
-        <li>If |statelessRun| is not empty, set |current| to a new iterable that pulls from |current| and applies each function in |statelessRun| in order per batch, [=normalize transform output|normalizing=] each result. Reset |statelessRun| to an empty list.
+        <li>If |statelessRun| is not empty, set |current| to the result of [=apply a stateless run=] with |current| and |statelessRun|. Reset |statelessRun| to an empty list.
         <li>Let |wrappedSource| be a new iterable that pulls from |current| and appends a final `null` value (the [=flush signal=]) after the source is exhausted.
         <li>Set |current| to the result of calling |transform|'s `"transform"` method with |wrappedSource|. The returned iterable becomes the new upstream.
         </ol>
     </ol>
-<li>If |statelessRun| is not empty, set |current| to a new iterable that applies each remaining function in order per batch, followed by a `null` [=flush signal=] when exhausted.
+<li>If |statelessRun| is not empty, set |current| to the result of [=apply a stateless run=] with |current| and |statelessRun|.
 <li>Return |current|.
 </ol>
 
@@ -796,7 +819,47 @@ Note: Sync stateless transforms receive `(chunks)` with no options parameter (th
 </div>
 
 <div algorithm>
-To <dfn>normalize transform output</dfn> given |value|: if |value| is `null`, return `null`. If |value| is a {{Uint8Array}}, return « |value| ». If |value| is a {{USVString}}, return « [=UTF-8 encode|UTF-8 encoded=] |value| ». If |value| is an {{ArrayBuffer}} or {{ArrayBufferView}}, convert to {{Uint8Array}} and return as a single-element batch. If |value| is iterable, flatten to {{Uint8Array}} chunks and return. Otherwise throw a {{TypeError}}.
+To <dfn>apply a stateless run</dfn> given an upstream iterable |upstream| (async for [=compose transform pipeline=], sync for [=compose sync transform pipeline=]), a non-empty list of stateless transforms |run|, and, in the async case, a {{TransformCallbackOptions}} |options|, return a new iterable of the same kind as |upstream| that behaves as follows. In the async case each function is called with a batch (or `null`) and |options|; in the sync case it is called with the batch (or `null`) only.
+
+<ol>
+<li>For each |batch| pulled from |upstream|:
+    <ol>
+    <li>Let |value| be |batch|.
+    <li>For each |fn| in |run|, in order: set |value| to the result of [=normalize transform output|normalizing=] the result of calling |fn| with |value|. If |value| is `null`, stop processing this batch; the remaining functions in |run| are not called for it.
+    <li>If |value| is not `null`, yield |value|.
+    </ol>
+<li>When |upstream| is exhausted, flush each function in |run| in order, so that every function receives the [=flush signal=] exactly once, after all of its input, including the output that functions earlier in |run| produced when flushed:
+    <ol>
+    <li>Let |pending| be an empty list of batches.
+    <li>For each |fn| in |run|, in order:
+        <ol>
+        <li>Let |next| be an empty list of batches.
+        <li>For each |b| in |pending|: let |r| be the result of [=normalize transform output|normalizing=] the result of calling |fn| with |b|. If |r| is not `null`, append |r| to |next|.
+        <li>Let |r| be the result of [=normalize transform output|normalizing=] the result of calling |fn| with `null`. If |r| is not `null`, append |r| to |next|.
+        <li>Set |pending| to |next|.
+        </ol>
+    <li>Yield each batch in |pending|, in order.
+    </ol>
+</ol>
+
+Every stateless transform in a pipeline receives the [=flush signal=], whether it is followed by a stateful transform or is at the end of the pipeline. A stateless run that precedes a stateful transform is flushed before the stateful transform's source yields its own `null`.
+</div>
+
+<div algorithm>
+To <dfn>normalize transform output</dfn> given |value|:
+
+<ol>
+<li>If |value| is a promise (async pipelines only), set |value| to the result of awaiting it. If it rejects, the error propagates to the consumer.
+<li>If |value| is `null`, return `null`.
+<li>If |value| is a {{Uint8Array}}, return « |value| ».
+<li>If |value| is a {{USVString}}, return « [=UTF-8 encode|UTF-8 encoded=] |value| ».
+<li>If |value| is an {{ArrayBuffer}} or {{ArrayBufferView}}, convert it to a {{Uint8Array}} and return « that {{Uint8Array}} ».
+<li>If |value| has a `Symbol.asyncIterator` method (async pipelines only), asynchronously iterate it, normalizing each yielded value as {{Stream/from()}} does, and flatten the results into a list |chunks| of {{Uint8Array}}s. If |chunks| is empty, return `null`; otherwise return |chunks|.
+<li>If |value| has a `Symbol.iterator` method (including a `Uint8Array[]` batch), iterate it, normalizing each yielded value as {{Stream/from()}} does, and flatten the results into a list |chunks| of {{Uint8Array}}s. If |chunks| is empty, return `null`; otherwise return |chunks|.
+<li>Throw a {{TypeError}}.
+</ol>
+
+In a sync pipeline, a promise or an async iterable returned by a transform is neither awaited nor iterated, and causes a {{TypeError}} (unless it also has a `Symbol.iterator` method).
 </div>
 
 
@@ -833,15 +896,28 @@ The <dfn method for="Stream">pipeToSync(source, ...args)</dfn> method is the syn
 <ol>
 <li>Let |normalized| be the result of calling {{Stream/fromSync()}} with |source|.
 <li>Let (|transforms|, |writer|, |options|) be the result of [=parse pipeTo arguments=] from the remaining |args| with |requiredMethod| set to `"writeSync"`.
-<li>Let |preventClose| be |options|["{{PipeToSyncOptions/preventClose}}"] and |preventFail| be |options|["{{PipeToSyncOptions/preventFail}}"].
+<li>Let |preventClose| be |options|["{{PipeToSyncOptions/preventClose}}"], |preventFail| be |options|["{{PipeToSyncOptions/preventFail}}"], and |failOnIncompleteClose| be |options|["{{PipeToSyncOptions/failOnIncompleteClose}}"].
 <li>Let |pipeline| be the result of [=compose sync transform pipeline=] with |normalized| and the extracted |transforms|.
 <li>Let |totalBytes| be 0.
 <li>Synchronously iterate |pipeline|. For each |batch| yielded, for each |chunk| in |batch|, add |chunk|'s byte length to |totalBytes|. Then write the batch to |writer|: if |writer| has a `writevSync` method, call |writer|.{{SyncWriter/writevSync()}} with |batch|; otherwise call |writer|.{{SyncWriter/writeSync()}} for each chunk. If the write returns `false`, throw a {{RangeError}} indicating the destination's [=byte budget=] is exhausted.
-<li>On successful completion, if |preventClose| is `false` and |writer| has an `endSync` method, call |writer|.{{SyncWriter/endSync()}}.
-<li>On error |e|, if |preventFail| is `false` and |writer| has a `fail` method, call |writer|.{{SyncWriter/fail()}} with |e|. Re-throw |e|.
+<li>On error |e| during the previous step, if |preventFail| is `false` and |writer| has a `fail` method, call |writer|.{{SyncWriter/fail()}} with |e|. Re-throw |e|.
+<li>If |preventClose| is `false` and |writer| has an `endSync` method:
+    <ol>
+    <li>Let |result| be the result of calling |writer|.{{SyncWriter/endSync()}}. If this throws an exception |e|, handle it as in the previous step.
+    <li>If |result| is −1 (the writer could not close synchronously):
+        <ol>
+        <li>Let |error| be a new {{TypeError}} indicating that the destination could not be closed synchronously.
+        <li>If |failOnIncompleteClose| is `true`, |preventFail| is `false`, and |writer| has a `fail` method, call |writer|.{{SyncWriter/fail()}} with |error|.
+        <li>Throw |error|.
+        </ol>
+    </ol>
 <li>Return |totalBytes|.
 </ol>
 </div>
+
+If {{SyncWriter/endSync()}} returns −1, all of the data has been accepted by the writer, but the writer is still open. By default {{Stream/pipeToSync()}} throws without failing the writer, so the caller may still close it by other means, for example with `await writer.end()`. For writers that cannot be closed any other way, setting {{PipeToSyncOptions/failOnIncompleteClose}} to `true` fails the writer with the thrown error instead. {{PipeToSyncOptions/preventFail}} takes precedence: when it is `true`, the writer is never failed.
+
+If {{PipeToSyncOptions/preventClose}} is `false` but the writer has no `endSync` method, {{Stream/pipeToSync()}} does not close the writer and returns normally; closing it is the caller's responsibility.
 
 
 Consumers {#consumers}
@@ -877,15 +953,17 @@ The <dfn method for="Stream">bytesSync(source, options)</dfn> method performs th
 The <dfn method for="Stream">text(source, options)</dfn> method collects all bytes and decodes them as text.
 
 <ol>
-<li>Let |bytes| be the result of {{Stream/bytes()}} with |source| and a {{ConsumeOptions}} containing |options|["{{ConsumeOptions/signal}}"] and |options|["{{ConsumeOptions/limit}}"].
 <li>Let |encoding| be |options|["{{TextConsumeOptions/encoding}}"] (default `"utf-8"`).
 <li>If |encoding| is not a supported encoding, throw a {{RangeError}}. Conforming implementations must support at least `"utf-8"`.
+<li>Let |bytes| be the result of {{Stream/bytes()}} with |source| and a {{ConsumeOptions}} containing |options|["{{ConsumeOptions/signal}}"] and |options|["{{ConsumeOptions/limit}}"].
 <li>Let |decoder| be a new {{TextDecoder}} with |encoding| and `fatal` set to `true`.
 <li>Return the result of calling |decoder|.`decode`(|bytes|).
 </ol>
 </div>
 
 Note: The `fatal: true` default means invalid byte sequences throw a {{TypeError}} rather than being silently replaced.
+
+Note: The encoding is validated before the source is read, so an unsupported encoding fails without consuming any data, even when the source never ends.
 
 The <dfn method for="Stream">textSync(source, options)</dfn> method performs the same algorithm synchronously.
 
@@ -1024,14 +1102,24 @@ Broadcast {#broadcast-section}
 The <dfn method for="Stream">broadcast(options)</dfn> method creates a [=broadcast channel=], a push-model multi-consumer pattern.
 
 <ol>
+<li>If |options|["{{BroadcastOptions/budget}}"] is present and is 0, throw a {{RangeError}}.
 <li>Let |budget| be |options|["{{BroadcastOptions/budget}}"] if present; otherwise an implementation-defined default that must be at least 16384 bytes.
 <li>Let |backpressure| be |options|["{{BroadcastOptions/backpressure}}"].
 <li>Create a shared circular buffer with [=byte budget=] |budget|.
 <li>Let |writer| be a new {{Writer}} backed by the shared buffer with |backpressure| policy.
 <li>Let |broadcast| be a new {{Broadcast}} object backed by the shared buffer.
+<li>Let |signal| be |options|["{{BroadcastOptions/signal}}"] if present; otherwise `undefined`.
+<li>If |signal| is not `undefined`:
+    <ol>
+    <li>Let |abortSteps| be the following steps: call |writer|.{{Writer/fail()}} with |signal|'s abort reason, and then call |broadcast|.{{Broadcast/cancel()}} with |signal|'s abort reason.
+    <li>If |signal| is [=AbortSignal/aborted=], run |abortSteps|.
+    <li>Otherwise, [=AbortSignal/add=] |abortSteps| to |signal|.
+    </ol>
 <li>Return «[ "writer" → |writer|, "broadcast" → |broadcast| ]».
 </ol>
 </div>
+
+Aborting the {{BroadcastOptions/signal}} errors the writer and cancels the [=broadcast channel=], both with the abort reason. The writer enters the errored state, as it does when the signal passed to {{Stream/push()}} aborts: its pending writes and its [=close promise=] (if any) reject with the abort reason, drain waiters are rejected, and later writes reject with the abort reason (or, for {{Writer/writeSync()}} and {{Writer/writevSync()}}, return `false`). Because the writer is already errored, the subsequent {{Broadcast/cancel()}} does not close it; it rejects every consumer's pull with the abort reason, and consumers added later are already errored. An abort is a failure, so the writer is not reported as closed: unlike an explicit {{Broadcast/cancel()}}, it leaves no indication that the producer finished normally. If the signal is already aborted when {{Stream/broadcast()}} is called, the returned writer is already errored and the returned broadcast is already cancelled. Aborting has no effect if the broadcast has already been cancelled. Once the writer is closed or errored and no consumers remain, the abort steps are removed from the signal, and aborting it afterwards has no effect.
 
 ### Broadcast backpressure ### {#broadcast-backpressure}
 
@@ -1059,7 +1147,8 @@ The <dfn method for="Broadcast">push(...args)</dfn> method creates a new consume
 <ol>
 <li>Let |transforms| be an empty list and |options| be an empty {{PullOptions}}.
 <li>[=Parse variadic transform arguments=] from |args| into |transforms| and |options|.
-<li>Create a new cursor at the current write position in the shared buffer.
+<li>If the broadcast has been cancelled, return a new async iterable whose first pull rejects with the broadcast's cancel reason if one was given, or otherwise returns `{ done: true, value: undefined }`. The new consumer is not registered, reads no buffered data, and does not call any of |transforms|.
+<li>Create a new cursor at the oldest entry still in the shared buffer (or at the current write position if the buffer is empty), so the new consumer first reads all data still buffered.
 <li>Let |pipelineController| be a new {{AbortController}}. If |options|["{{PullOptions/signal}}"] is present, set |pipelineController|'s signal to follow it.
 <li>Let |cursorIterable| be an async iterable that advances the cursor on each step, waiting for new data if needed.
 <li>Return the result of [=compose transform pipeline=] with |cursorIterable|, |transforms|, and a {{TransformCallbackOptions}} with signal set to |pipelineController|'s signal. On break/error, abort |pipelineController| and detach the cursor.
@@ -1068,9 +1157,47 @@ The <dfn method for="Broadcast">push(...args)</dfn> method creates a new consume
 
 ### `Broadcast.cancel()` ### {#broadcast-cancel}
 
-The <dfn method for="Broadcast">cancel(reason)</dfn> method cancels all consumers. If |reason| is provided, each consumer sees it as an error; otherwise they see clean completion.
+<div algorithm>
+The <dfn method for="Broadcast">cancel(reason)</dfn> method cancels the [=broadcast channel=], including its writer.
+
+<ol>
+<li>If the broadcast is already cancelled, return.
+<li>Mark the broadcast as cancelled. If |reason| was given, store it as the broadcast's cancel reason.
+<li>If the broadcast's {{Writer}} is open or [=closing=], transition it to the closed state: reject all of its pending write promises with an "{{AbortError}}" {{DOMException}}, resolve its [=close promise=] (if any) with the total number of bytes written, and call [=notify drain waiters=]. From then on the writer behaves as any closed writer: {{Writer/canWrite}} is `null`, {{Writer/write()}} and {{Writer/writev()}} reject with a {{TypeError}}, and {{Writer/writeSync()}} and {{Writer/writevSync()}} return `false`.
+<li>For each consumer: detach it. Its pending pull, or if none is pending its next pull, rejects with |reason| if |reason| was given, or otherwise returns `{ done: true, value: undefined }`. Any later pulls return `{ done: true, value: undefined }`.
+<li>Discard all data in the shared buffer.
+</ol>
+
+After {{Broadcast/cancel()}}, {{Broadcast/push()}} still returns a consumer, but that consumer is already finished: if a reason was given, its first pull rejects with that reason; otherwise its first pull returns `{ done: true, value: undefined }`. It does not read any data left in the buffer. {{Broadcast/consumerCount}} is 0.
+</div>
 
 Implementations should support `Symbol.dispose` by calling {{Broadcast/cancel()}} with no argument.
+
+### `Stream.broadcastFrom()` ### {#broadcastfrom-method}
+
+<div algorithm>
+The <dfn method for="Stream">broadcastFrom(input, options)</dfn> method creates a [=broadcast channel=] fed from an existing source, and returns its {{Broadcast}}. Unlike {{Stream/broadcast()}}, it does not return a {{Writer}}: the data comes from |input|.
+
+<ol>
+<li>If |input| is an object with a method keyed by `Symbol.for('Stream.broadcastProtocol')`, then:
+    <ol>
+    <li>Let |result| be the result of calling that method on |input| with |options|.
+    <li>If |result| is not an object, throw a {{TypeError}}.
+    <li>Return |result|.
+    </ol>
+<li>Let |normalized| be the result of {{Stream/from()}} with |input|.
+<li>Let «[ "writer" → |writer|, "broadcast" → |broadcast| ]» be the result of {{Stream/broadcast()}} with |options|.
+<li>Let |signal| be |options|["{{BroadcastOptions/signal}}"] if present; otherwise `undefined`.
+<li>Start the following steps without waiting for them to finish:
+    <ol>
+    <li>Asynchronously iterate |normalized|. For each |batch| yielded, if |writer|.{{Writer/writevSync()}} with |batch| returns `false`, await |writer|.{{Writer/writev()}} with |batch| and «[ "signal" → |signal| ]».
+    <li>When |normalized| is exhausted, if |writer|.{{Writer/endSync()}} returns −1, await |writer|.{{Writer/end()}} with «[ "signal" → |signal| ]».
+    <li>If |broadcast| is cancelled before these steps finish (including because |signal| aborted, which cancels |broadcast|), stop iterating |normalized|, which calls its iterator's `return()` method.
+    <li>If iterating |normalized| or writing to |writer| fails with error |e|, and |broadcast| has not been cancelled, call |writer|.{{Writer/fail()}} with |e|.
+    </ol>
+<li>Return |broadcast|.
+</ol>
+</div>
 
 Share {#share-section}
 ----------------------
@@ -1081,7 +1208,14 @@ Share {#share-section}
 The <dfn method for="Stream">share(source, options)</dfn> method creates a [=shared source=], a pull-model multi-consumer pattern.
 
 <ol>
+<li>If |source| is an object with a method keyed by `Symbol.for('Stream.shareProtocol')`, then:
+    <ol>
+    <li>Let |result| be the result of calling that method on |source| with |options|.
+    <li>If |result| is not an object, throw a {{TypeError}}.
+    <li>Return |result|.
+    </ol>
 <li>Let |normalized| be the result of {{Stream/from()}} with |source|.
+<li>If |options|["{{ShareOptions/budget}}"] is present and is 0, throw a {{RangeError}}.
 <li>Let |budget| be |options|["{{ShareOptions/budget}}"] if present; otherwise an implementation-defined default that must be at least 16384 bytes.
 <li>Let |backpressure| be |options|["{{ShareOptions/backpressure}}"].
 <li>Create a shared buffer with [=byte budget=] |budget|. The source iterator is created lazily on first pull.
@@ -1101,13 +1235,15 @@ A [=shared source=] uses a shared buffer and per-consumer cursors in the same ma
 
 *   The shared buffer is trimmed as all consumers advance past buffered entries. An entry is eligible for removal only when every active consumer's cursor has moved beyond it.
 
-*   When the slowest consumer falls behind and the [=byte budget=] is exhausted, the configured [=backpressure policy=] determines what happens when a faster consumer attempts to pull new data from upstream. With `"strict"`, the pull is rejected. The faster consumer receives an error indicating the budget is exhausted, but the consumer's iterator remains valid and subsequent pulls may succeed once the slow consumer advances. With `"unbounded"`, the pull is blocked until the slowest consumer advances and frees budget capacity. With `"drop-oldest"`, the oldest entry is discarded (advancing the slowest cursor, freeing its byte size from the budget) to make room for the new upstream pull. With `"drop-newest"`, the upstream pull result is discarded.
+*   When the slowest consumer falls behind and the [=byte budget=] is exhausted, the configured [=backpressure policy=] determines what happens when a faster consumer attempts to pull new data from upstream. With `"strict"`, the pull is rejected with a {{RangeError}} indicating the budget is exhausted (for {{Stream/shareSync()}}, `next()` throws it), and the consumer is detached as if its iterator's `return()` had been called: its cursor is removed, the buffer may be trimmed, and subsequent calls to `next()` on that consumer's iterator return `{ done: true, value: undefined }`. With `"unbounded"`, the pull is blocked until the slowest consumer advances and frees budget capacity. With `"drop-oldest"`, the oldest entry is discarded (advancing the slowest cursor, freeing its byte size from the budget) to make room for the new upstream pull. With `"drop-newest"`, one batch is pulled from upstream and discarded: it is not stored in the shared buffer and no consumer receives it. The pull that triggered it then waits, as with `"unbounded"`, until the budget has capacity (because the slowest consumer advanced or detached), the source ends or errors, or the share is cancelled, and then proceeds as a normal pull. The pulling consumer therefore never sees the discarded batch, never sees a spurious `{ done: true }`, and loses no data beyond that one batch per budget-exhausted pull; the policy drops the newest data, but it does not let a fast consumer run ahead of the slowest one.
 
-Note: A rejected pull under `"strict"` does not terminate the consumer's iterator. Within the constraints of the async iterator protocol, the `.next()` call returns a rejected promise, but the iterator is not put into a "done" state. The consumer may retry by calling `.next()` again. However, if the consumer is using `for await...of`, the rejected promise will cause the loop to exit and the iterator to be closed via `.return()`. This is standard async iterator protocol behavior, not specific to this API.
+Note: A consumer whose pull is rejected under `"strict"` is detached rather than left registered. When `next()` rejects (or throws), `for await...of` and `for...of` exit without calling the iterator's `return()` method, and transform pipelines built from generators finish once they throw, so in the common cases nothing would ever close or retry the consumer. A consumer left registered would keep its cursor indefinitely, preventing the buffer from being trimmed past it and causing every other consumer to hit the budget as well. A consumer that wants to keep reading after a rejection must call {{Share/pull()}} again to create a new consumer.
 
 *   When a slow consumer detaches, the buffer may be trimmed and blocked consumers may be unblocked, just as with [=broadcast channel|broadcast=].
 
 *   If there are no consumers, no upstream pulls occur (the source is lazy).
+
+*   As with [=broadcast channel|broadcast=], a consumer that joins late begins reading from the oldest entry still in the shared buffer at the time it calls {{Share/pull()}}.
 
 ### `Share.pull()` ### {#share-pull}
 
@@ -1116,7 +1252,7 @@ The <dfn method for="Share">pull(...args)</dfn> method creates a new consumer.
 
 <ol>
 <li>Let |transforms| and |options| be extracted from |args| via [=parse variadic transform arguments=].
-<li>Create a new cursor at the current buffer position. If the source iterator has not been created yet, create it now (lazy initialization).
+<li>Create a new cursor at the oldest entry still in the shared buffer (or at the end of the buffer if it is empty), so the new consumer first reads all data still buffered before any data pulled from upstream. If the source iterator has not been created yet, create it now (lazy initialization).
 <li>Let |pipelineController| be a new {{AbortController}}. If |options|["{{PullOptions/signal}}"] is present, set |pipelineController|'s signal to follow it.
 <li>Let |cursorIterable| be an async iterable that checks the cursor position, reads from the buffer if available or pulls from the source iterator if not, and trims the buffer when all consumers have advanced.
 <li>Return the result of [=compose transform pipeline=] with |cursorIterable|, |transforms|, and a {{TransformCallbackOptions}} with signal set to |pipelineController|'s signal. On break/error, abort |pipelineController| and detach the cursor.
@@ -1133,13 +1269,22 @@ The <dfn method for="Share">cancel(reason)</dfn> method cancels all consumers an
 The <dfn method for="Stream">shareSync(source, options)</dfn> method creates a synchronous [=shared source=].
 
 <ol>
+<li>If |source| is an object with a method keyed by `Symbol.for('Stream.shareSyncProtocol')`, then:
+    <ol>
+    <li>Let |result| be the result of calling that method on |source| with |options|.
+    <li>If |result| is not an object, throw a {{TypeError}}.
+    <li>Return |result|.
+    </ol>
 <li>Let |normalized| be the result of {{Stream/fromSync()}} with |source|.
+<li>If |options|["{{ShareSyncOptions/budget}}"] is present and is 0, throw a {{RangeError}}.
 <li>Let |budget| be |options|["{{ShareSyncOptions/budget}}"] if present; otherwise an implementation-defined default that must be at least 16384 bytes.
 <li>Let |backpressure| be |options|["{{ShareSyncOptions/backpressure}}"].
 <li>Create a shared buffer with [=byte budget=] |budget|. The source iterator is created lazily on first pull.
 <li>Return a new {{SyncShare}} object backed by the shared buffer, |backpressure| policy, and |normalized| as the upstream source.
 </ol>
 </div>
+
+{{ShareSyncOptions/backpressure}} only accepts `"strict"` and `"drop-oldest"`; other {{BackpressurePolicy}} values, such as `"unbounded"` and `"drop-newest"`, are rejected with a {{TypeError}} when the options dictionary is converted. A synchronous `next()` cannot wait for budget, and the slowest consumer cannot advance while another consumer's `next()` is running, so neither policy has a workable meaning for a synchronous [=shared source=]: `"unbounded"` would have to wait, and `"drop-newest"` could only discard upstream data repeatedly or report an end of stream that did not happen. With `"strict"` and `"drop-oldest"`, a synchronous [=shared source=] behaves as described in [[#share-backpressure]].
 
 
 Duplex channels {#duplex-section}
@@ -1195,13 +1340,13 @@ Multi-consumer protocols {#protocol-multi}
 
 <dl>
   <dt>`Symbol.for('Stream.broadcastProtocol')`</dt>
-  <dd>A method accepting an optional {{BroadcastOptions}} and returning a {{Broadcast}} object. Enables custom types to provide optimized broadcast implementations.</dd>
+  <dd>A method accepting an optional {{BroadcastOptions}} and returning a {{Broadcast}} object. Enables custom types to provide optimized broadcast implementations. Used by {{Stream/broadcastFrom()}}, which returns the method's result in place of creating a [=broadcast channel=].</dd>
 
   <dt>`Symbol.for('Stream.shareProtocol')`</dt>
-  <dd>A method accepting an optional {{ShareOptions}} and returning a {{Share}} object.</dd>
+  <dd>A method accepting an optional {{ShareOptions}} and returning a {{Share}} object. Used by {{Stream/share()}}, which returns the method's result in place of creating a [=shared source=].</dd>
 
   <dt>`Symbol.for('Stream.shareSyncProtocol')`</dt>
-  <dd>A method accepting an optional {{ShareSyncOptions}} and returning a {{SyncShare}} object.</dd>
+  <dd>A method accepting an optional {{ShareSyncOptions}} and returning a {{SyncShare}} object. Used by {{Stream/shareSync()}}, which returns the method's result in place of creating a synchronous [=shared source=].</dd>
 </dl>
 
 Drainable protocol {#protocol-drainable}
@@ -1226,7 +1371,8 @@ To <dfn>parse variadic transform arguments</dfn> from an arguments list |args|, 
 
 <ol>
 <li>Let |transforms| be an empty list and |options| be `undefined`.
-<li>For each |arg| in |args|: if |arg| is a [=transform argument=], append it to |transforms|; otherwise, if |options| is `undefined`, set |options| to |arg|; otherwise throw a {{TypeError}}.
+<li>If |args| is not empty and its final element is not a [=transform argument=], set |options| to that element and remove it from |args|.
+<li>For each remaining |arg| in |args|: if |arg| is a [=transform argument=], append it to |transforms|; otherwise throw a {{TypeError}}.
 <li>If |options| is `undefined`, set |options| to an empty dictionary.
 <li>Return (|transforms|, |options|).
 </ol>
