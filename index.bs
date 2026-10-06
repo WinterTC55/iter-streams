@@ -928,15 +928,17 @@ The <dfn method for="Stream">bytesSync(source, options)</dfn> method performs th
 The <dfn method for="Stream">text(source, options)</dfn> method collects all bytes and decodes them as text.
 
 <ol>
-<li>Let |bytes| be the result of {{Stream/bytes()}} with |source| and a {{ConsumeOptions}} containing |options|["{{ConsumeOptions/signal}}"] and |options|["{{ConsumeOptions/limit}}"].
 <li>Let |encoding| be |options|["{{TextConsumeOptions/encoding}}"] (default `"utf-8"`).
 <li>If |encoding| is not a supported encoding, throw a {{RangeError}}. Conforming implementations must support at least `"utf-8"`.
+<li>Let |bytes| be the result of {{Stream/bytes()}} with |source| and a {{ConsumeOptions}} containing |options|["{{ConsumeOptions/signal}}"] and |options|["{{ConsumeOptions/limit}}"].
 <li>Let |decoder| be a new {{TextDecoder}} with |encoding| and `fatal` set to `true`.
 <li>Return the result of calling |decoder|.`decode`(|bytes|).
 </ol>
 </div>
 
 Note: The `fatal: true` default means invalid byte sequences throw a {{TypeError}} rather than being silently replaced.
+
+Note: The encoding is validated before the source is read, so an unsupported encoding fails without consuming any data, even when the source never ends.
 
 The <dfn method for="Stream">textSync(source, options)</dfn> method performs the same algorithm synchronously.
 
