@@ -491,6 +491,7 @@ namespace Stream {
 
   /* Multi-consumer */
   BroadcastResult broadcast(optional BroadcastOptions options = {});
+  Broadcast broadcastFrom(any input, optional BroadcastOptions options = {});
   Share share(any source, optional ShareOptions options = {});
   SyncShare shareSync(any source, optional ShareSyncOptions options = {});
 
@@ -1144,6 +1145,32 @@ After {{Broadcast/cancel()}}, {{Broadcast/push()}} still returns a consumer, but
 
 Implementations should support `Symbol.dispose` by calling {{Broadcast/cancel()}} with no argument.
 
+### `Stream.broadcastFrom()` ### {#broadcastfrom-method}
+
+<div algorithm>
+The <dfn method for="Stream">broadcastFrom(input, options)</dfn> method creates a [=broadcast channel=] fed from an existing source, and returns its {{Broadcast}}. Unlike {{Stream/broadcast()}}, it does not return a {{Writer}}: the data comes from |input|.
+
+<ol>
+<li>If |input| is an object with a method keyed by `Symbol.for('Stream.broadcastProtocol')`, then:
+    <ol>
+    <li>Let |result| be the result of calling that method on |input| with |options|.
+    <li>If |result| is not an object, throw a {{TypeError}}.
+    <li>Return |result|.
+    </ol>
+<li>Let |normalized| be the result of {{Stream/from()}} with |input|.
+<li>Let «[ "writer" → |writer|, "broadcast" → |broadcast| ]» be the result of {{Stream/broadcast()}} with |options|.
+<li>Let |signal| be |options|["{{BroadcastOptions/signal}}"] if present; otherwise `undefined`.
+<li>Start the following steps without waiting for them to finish:
+    <ol>
+    <li>Asynchronously iterate |normalized|. For each |batch| yielded, if |writer|.{{Writer/writevSync()}} with |batch| returns `false`, await |writer|.{{Writer/writev()}} with |batch| and «[ "signal" → |signal| ]».
+    <li>When |normalized| is exhausted, if |writer|.{{Writer/endSync()}} returns −1, await |writer|.{{Writer/end()}} with «[ "signal" → |signal| ]».
+    <li>If |broadcast| is cancelled, or |signal| aborts, before these steps finish, stop iterating |normalized|, which calls its iterator's `return()` method.
+    <li>If iterating |normalized| or writing to |writer| fails with error |e|, and |broadcast| has not been cancelled, call |writer|.{{Writer/fail()}} with |e|.
+    </ol>
+<li>Return |broadcast|.
+</ol>
+</div>
+
 Share {#share-section}
 ----------------------
 
@@ -1153,6 +1180,12 @@ Share {#share-section}
 The <dfn method for="Stream">share(source, options)</dfn> method creates a [=shared source=], a pull-model multi-consumer pattern.
 
 <ol>
+<li>If |source| is an object with a method keyed by `Symbol.for('Stream.shareProtocol')`, then:
+    <ol>
+    <li>Let |result| be the result of calling that method on |source| with |options|.
+    <li>If |result| is not an object, throw a {{TypeError}}.
+    <li>Return |result|.
+    </ol>
 <li>Let |normalized| be the result of {{Stream/from()}} with |source|.
 <li>If |options|["{{ShareOptions/budget}}"] is present and is 0, throw a {{RangeError}}.
 <li>Let |budget| be |options|["{{ShareOptions/budget}}"] if present; otherwise an implementation-defined default that must be at least 16384 bytes.
@@ -1208,6 +1241,12 @@ The <dfn method for="Share">cancel(reason)</dfn> method cancels all consumers an
 The <dfn method for="Stream">shareSync(source, options)</dfn> method creates a synchronous [=shared source=].
 
 <ol>
+<li>If |source| is an object with a method keyed by `Symbol.for('Stream.shareSyncProtocol')`, then:
+    <ol>
+    <li>Let |result| be the result of calling that method on |source| with |options|.
+    <li>If |result| is not an object, throw a {{TypeError}}.
+    <li>Return |result|.
+    </ol>
 <li>Let |normalized| be the result of {{Stream/fromSync()}} with |source|.
 <li>If |options|["{{ShareSyncOptions/budget}}"] is present and is 0, throw a {{RangeError}}.
 <li>Let |budget| be |options|["{{ShareSyncOptions/budget}}"] if present; otherwise an implementation-defined default that must be at least 16384 bytes.
@@ -1273,13 +1312,13 @@ Multi-consumer protocols {#protocol-multi}
 
 <dl>
   <dt>`Symbol.for('Stream.broadcastProtocol')`</dt>
-  <dd>A method accepting an optional {{BroadcastOptions}} and returning a {{Broadcast}} object. Enables custom types to provide optimized broadcast implementations.</dd>
+  <dd>A method accepting an optional {{BroadcastOptions}} and returning a {{Broadcast}} object. Enables custom types to provide optimized broadcast implementations. Used by {{Stream/broadcastFrom()}}, which returns the method's result in place of creating a [=broadcast channel=].</dd>
 
   <dt>`Symbol.for('Stream.shareProtocol')`</dt>
-  <dd>A method accepting an optional {{ShareOptions}} and returning a {{Share}} object.</dd>
+  <dd>A method accepting an optional {{ShareOptions}} and returning a {{Share}} object. Used by {{Stream/share()}}, which returns the method's result in place of creating a [=shared source=].</dd>
 
   <dt>`Symbol.for('Stream.shareSyncProtocol')`</dt>
-  <dd>A method accepting an optional {{ShareSyncOptions}} and returning a {{SyncShare}} object.</dd>
+  <dd>A method accepting an optional {{ShareSyncOptions}} and returning a {{SyncShare}} object. Used by {{Stream/shareSync()}}, which returns the method's result in place of creating a synchronous [=shared source=].</dd>
 </dl>
 
 Drainable protocol {#protocol-drainable}
