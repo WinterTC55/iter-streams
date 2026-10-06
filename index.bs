@@ -144,7 +144,7 @@ Backpressure is the mechanism by which a consumer signals to a producer that it 
 
 The internal slots buffer has a byte budget controlling how much data may accumulate. Each write operation occupies one slot. The slot count is elastic: small writes consume little budget so many slots fit; large writes consume more budget so fewer slots fit. A write is accepted when the buffered bytes are below the budget, regardless of the write's own size. Once accepted, the write consumes budget equal to its byte size, even if this overshoots the remaining budget. The next write then sees the budget exhausted and the [=backpressure policy=] determines what happens.
 
-The `budget` option specifies the initial byte budget for writers created by {{Stream/push()}}, {{Stream/broadcast()}}, {{Stream/share()}}, and {{Stream/duplex()}}. If not provided, the implementation selects a default that must be at least 16384 bytes (16 KB). Implementations may apply a reasonable upper limit.
+The `budget` option specifies the initial byte budget for writers created by {{Stream/push()}}, {{Stream/broadcast()}}, {{Stream/share()}}, and {{Stream/duplex()}}. If not provided, the implementation selects a default that must be at least 16384 bytes (16 KB). The 16384-byte floor applies only to that default: an explicitly provided `budget` must be at least 1, and a `budget` of 0 causes a {{RangeError}}. Implementations may apply a reasonable upper limit.
 
 The [=byte budget=] is not required to remain fixed for the lifetime of a writer. Implementations may adjust the budget dynamically in response to external factors such as flow control signals, memory pressure, or network conditions. For example, a {{Writer}} backed by a QUIC stream may have a budget governed by the stream's flow control window, which can expand or contract independently of write operations. All backpressure checks evaluate the budget at call time; a budget that increases between writes may cause {{Writer/canWrite}} to transition from `false` to `true` and may resolve pending {{Stream/ondrain()}} promises without any data being consumed.
 
@@ -232,7 +232,7 @@ dictionary WriteOptions {
 };
 
 dictionary PushStreamOptions {
-  unsigned long long budget;
+  [EnforceRange] unsigned long long budget;
   BackpressurePolicy backpressure = "strict";
   AbortSignal signal;
 };
@@ -279,33 +279,33 @@ dictionary MergeOptions {
 };
 
 dictionary BroadcastOptions {
-  unsigned long long budget;
+  [EnforceRange] unsigned long long budget;
   BackpressurePolicy backpressure = "strict";
   AbortSignal signal;
 };
 
 dictionary ShareOptions {
-  unsigned long long budget;
+  [EnforceRange] unsigned long long budget;
   BackpressurePolicy backpressure = "strict";
   AbortSignal signal;
 };
 
 dictionary ShareSyncOptions {
-  unsigned long long budget;
+  [EnforceRange] unsigned long long budget;
   BackpressurePolicy backpressure = "strict";
 };
 </pre>
 
-Note: The `budget` must be at least 16384 bytes (16 KB); implementations may choose a higher default. Implementations may also choose a larger default for multi-consumer patterns ({{BroadcastOptions}}, {{ShareOptions}}, {{ShareSyncOptions}}) than for single-consumer patterns ({{PushStreamOptions}}, {{DuplexOptions}}), because the slowest consumer governs backpressure and a larger budget provides more headroom before fast consumers are stalled by a slow one.
+Note: When `budget` is not provided, the implementation-defined default must be at least 16384 bytes (16 KB); implementations may choose a higher default. An explicitly provided `budget` only needs to be at least 1; values that are negative or not finite are rejected with a {{TypeError}} by `[EnforceRange]`, and 0 is rejected with a {{RangeError}} by the algorithms that use it. Implementations may also choose a larger default for multi-consumer patterns ({{BroadcastOptions}}, {{ShareOptions}}, {{ShareSyncOptions}}) than for single-consumer patterns ({{PushStreamOptions}}, {{DuplexOptions}}), because the slowest consumer governs backpressure and a larger budget provides more headroom before fast consumers are stalled by a slow one.
 
 <pre class="idl">
 dictionary DuplexDirectionOptions {
-  unsigned long long budget;
+  [EnforceRange] unsigned long long budget;
   BackpressurePolicy backpressure;
 };
 
 dictionary DuplexOptions {
-  unsigned long long budget;
+  [EnforceRange] unsigned long long budget;
   BackpressurePolicy backpressure = "strict";
   DuplexDirectionOptions a;
   DuplexDirectionOptions b;
@@ -519,6 +519,7 @@ When called, it performs the following steps:
 <ol>
 <li>Let |transforms| be an empty list and |options| be an empty {{PushStreamOptions}}.
 <li>[=Parse variadic transform arguments=] from |args| into |transforms| and |options|.
+<li>If |options|["{{PushStreamOptions/budget}}"] is present and is 0, throw a {{RangeError}}.
 <li>Let |budget| be |options|["{{PushStreamOptions/budget}}"] if present; otherwise an implementation-defined default that must be at least 16384 bytes.
 <li>Let |backpressure| be |options|["{{PushStreamOptions/backpressure}}"].
 <li>Let |signal| be |options|["{{PushStreamOptions/signal}}"] if present; otherwise `undefined`.
@@ -1034,6 +1035,7 @@ Broadcast {#broadcast-section}
 The <dfn method for="Stream">broadcast(options)</dfn> method creates a [=broadcast channel=], a push-model multi-consumer pattern.
 
 <ol>
+<li>If |options|["{{BroadcastOptions/budget}}"] is present and is 0, throw a {{RangeError}}.
 <li>Let |budget| be |options|["{{BroadcastOptions/budget}}"] if present; otherwise an implementation-defined default that must be at least 16384 bytes.
 <li>Let |backpressure| be |options|["{{BroadcastOptions/backpressure}}"].
 <li>Create a shared circular buffer with [=byte budget=] |budget|.
@@ -1092,6 +1094,7 @@ The <dfn method for="Stream">share(source, options)</dfn> method creates a [=sha
 
 <ol>
 <li>Let |normalized| be the result of {{Stream/from()}} with |source|.
+<li>If |options|["{{ShareOptions/budget}}"] is present and is 0, throw a {{RangeError}}.
 <li>Let |budget| be |options|["{{ShareOptions/budget}}"] if present; otherwise an implementation-defined default that must be at least 16384 bytes.
 <li>Let |backpressure| be |options|["{{ShareOptions/backpressure}}"].
 <li>Create a shared buffer with [=byte budget=] |budget|. The source iterator is created lazily on first pull.
@@ -1144,6 +1147,7 @@ The <dfn method for="Stream">shareSync(source, options)</dfn> method creates a s
 
 <ol>
 <li>Let |normalized| be the result of {{Stream/fromSync()}} with |source|.
+<li>If |options|["{{ShareSyncOptions/budget}}"] is present and is 0, throw a {{RangeError}}.
 <li>Let |budget| be |options|["{{ShareSyncOptions/budget}}"] if present; otherwise an implementation-defined default that must be at least 16384 bytes.
 <li>Let |backpressure| be |options|["{{ShareSyncOptions/backpressure}}"].
 <li>Create a shared buffer with [=byte budget=] |budget|. The source iterator is created lazily on first pull.
